@@ -42,7 +42,7 @@ python icp.py 公司1,公司2,公司3
 
 ### 指定查询类型
 ```bash
-python icp.py "公司名称" --type 1  # 1-网站，6-APP，7-小程序，8-快应用
+python icp.py 公司名称 --type 1  # 1-网站，6-APP，7-小程序，8-快应用
 ```
 
 ### 从文件批量查询
@@ -52,7 +52,7 @@ python icp.py -f companies.txt
 
 ### 导出结果
 ```bash
-python icp.py "公司名称" -o result.txt
+python icp.py 公司名称 -o result.txt
 ```
 
 ## 参数说明
@@ -72,7 +72,7 @@ python icp.py "公司名称" -o result.txt
 ### 案例1：查询单个公司网站备案
 ```bash
 # 查询小米公司的网站备案信息
-python icp.py "小米科技有限责任公司"
+python icp.py 小米科技有限责任公司
 ```
 
 输出示例：
@@ -95,21 +95,21 @@ python icp.py "小米科技有限责任公司"
 ### 案例2：批量查询多个公司
 ```bash
 # 同时查询多个公司的备案信息
-python icp.py "小米科技有限责任公司,百度在线网络技术(北京)有限公司,阿里巴巴(中国)有限公司"
+python icp.py 小米科技有限责任公司,百度在线网络技术(北京)有限公司,阿里巴巴(中国)有限公司
 ```
 
 ### 案例3：查询APP备案信息
 ```bash
 # 查询某公司的APP备案信息
-python icp.py "字节跳动有限公司" --type 6
+python icp.py 字节跳动有限公司 --type 6
 ```
 
 ### 案例4：从文件批量查询并导出结果
 ```bash
 # 1. 创建公司列表文件 companies.txt
-echo "小米科技有限责任公司
+echo 小米科技有限责任公司
 百度在线网络技术(北京)有限公司
-阿里巴巴(中国)有限公司" > companies.txt
+阿里巴巴(中国)有限公司 > companies.txt
 
 # 2. 执行批量查询并导出结果
 python icp.py -f companies.txt -o results.txt
@@ -118,13 +118,13 @@ python icp.py -f companies.txt -o results.txt
 ### 案例5：分页查询
 ```bash
 # 查询第一页，每页20条记录
-python icp.py "腾讯科技(深圳)有限公司" --page 1 --size 20
+python icp.py 腾讯科技(深圳)有限公司 --page 1 --size 20
 ```
 
 ### 案例6：查询小程序备案
 ```bash
 # 查询某公司的小程序备案信息
-python icp.py "美团点评" --type 7
+python icp.py 美团点评 --type 7
 ```
 ## 注意事项
 
@@ -171,7 +171,7 @@ python icp.py "美团点评" --type 7
 
 ## 更新日志
 
-### v1.0.0 (2024-03-xx)
+### v1.0.0 (2025-05-12)
 - 初始版本发布
 - 支持基本查询功能
 - 支持批量查询
