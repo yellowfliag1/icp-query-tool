@@ -1,6 +1,6 @@
 # ICP备案信息查询工具
 
-一款用于查询ICP备案信息的Python工具，支持查询网站、APP、小程序和快应用的备案信息。
+一款用于查询ICP备案信息的Python工具，支持查询网站、APP、小程序和快应用的备案信息。参考：https://github.com/fasnow/fine
 
 ## 功能特点
 
