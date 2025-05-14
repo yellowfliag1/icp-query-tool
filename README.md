@@ -49,7 +49,7 @@ python icp.py 公司名称 --type 1  # 1-网站，6-APP，7-小程序，8-快应
 ```bash
 python icp.py -f companies.txt
 ```
-
+批量查询的时候一定要用IP代理池，比如：https://github.com/jhao104/proxy_pool和https://github.com/thinkoaa/Deadpool
 ### 导出结果
 ```bash
 python icp.py 公司名称 -o result.txt
