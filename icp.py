@@ -31,22 +31,26 @@ class ICPItem:
     service_type: str
 
 class ICPQuery:
-    def __init__(self):
+    def __init__(self, proxy: Optional[str] = None):
         # 解码URL
         self.referer = base64.b64decode("aHR0cHM6Ly9iZWlhbi5taWl0Lmdvdi5jbi8=").decode()
         self.get_token_url = base64.b64decode("aHR0cHM6Ly9obHdpY3Bmd2MubWlpdC5nb3YuY24vaWNwcHJvamVjdF9xdWVyeS9hcGkvYXV0aA==").decode()
         self.query_url = base64.b64decode("aHR0cHM6Ly9obHdpY3Bmd2MubWlpdC5nb3YuY24vaWNwcHJvamVjdF9xdWVyeS9hcGkvaWNwQWJicmV2aWF0ZUluZm8vcXVlcnlCeUNvbmRpdGlvbi8=").decode()
         
-        # 初始化会话
-        self.session = requests.Session()
-        self.session.mount("http://", HTTPAdapter(max_retries=Retry(total=3, backoff_factor=1)))
-        self.session.mount("https://", HTTPAdapter(max_retries=Retry(total=3, backoff_factor=1)))
-        
         # 初始化属性
         self.token = None
         self.refresh_token = None
         self.expire_in = 0
-        self.sign = "eyJ0eXBlIjozLCJleHREYXRhIjp7InZhZnljb2RlX2ltYWdlX2tleSI6IjBlNzg0YzM4YmQ1ZTQwNWY4NzQyMTdiN2E5MjVjZjdhIn0sImUiOjE3MzA5NzkzNTgwMDB9.kyklc3fgv9Ex8NnlmkYuCyhe8vsLrXBcUUkEawZryGc"
+        self.sign = "eyJ0eXBlIjozLCJleHREYXRhIjp7InZhZnljb2RlX2ltYWdlX2tleSI6ImJhMjVlZGNjZGNlYjQwYWY4MjNmNzViYmEwODZhYTFkIn0sImUiOjE3NDcxMDg2Mzk5NzJ9.fJZg3jIz-vRYq4pgKdtu38CDC4DW9-SL9t1qUZO4Z3k"
+        
+        # 设置代理
+        self.proxies = None
+        if proxy:
+            self.proxies = {
+                "http": proxy,
+                "https": proxy
+            }
+            print(f"使用代理: {proxy}")
         
         # 设置基础请求头
         self.headers = {
@@ -67,11 +71,19 @@ class ICPQuery:
                 "timeStamp": timestamp
             }
             
-            response = self.session.post(
+            # 每次请求都创建新的会话
+            session = requests.Session()
+            # 禁用连接池
+            adapter = HTTPAdapter(pool_connections=0, pool_maxsize=0)
+            session.mount("http://", adapter)
+            session.mount("https://", adapter)
+            
+            response = session.post(
                 self.get_token_url,
                 headers=self.headers,
                 data=data,
-                timeout=10
+                timeout=10,
+                proxies=self.proxies
             )
             
             if response.status_code != 200:
@@ -92,86 +104,111 @@ class ICPQuery:
 
     def query(self, unit_name: str, page_num: int = 1, page_size: int = 100, service_type: str = "1") -> Optional[Dict]:
         """查询ICP备案信息"""
-        try:
-            # 检查token
-            if not self.token or time.time() * 1000 >= self.expire_in:
-                if not self.set_token_from_remote():
-                    return None
-            
-            # 设置查询请求头
-            headers = self.headers.copy()
-            headers["Token"] = self.token
-            headers["Sign"] = self.sign
-            headers["Content-Type"] = "application/json;charset=UTF-8"
-            
-            # 查询参数
-            data = {
-                "pageNum": page_num,
-                "pageSize": page_size,
-                "unitName": unit_name,
-                "serviceType": service_type
-            }
-            
-            # 执行查询
-            response = self.session.post(
-                self.query_url,
-                headers=headers,
-                json=data,
-                timeout=10
-            )
-            
-            if response.status_code != 200:
-                raise Exception(f"查询失败，状态码: {response.status_code}")
-            
-            result = response.json()
-            if result.get("code") != 200:
-                error_msg = result.get("msg", "")
-                if "验证码不匹配" in error_msg:
-                    raise CaptchaMismatchError(error_msg)
-                elif "token过期" in error_msg:
-                    raise TokenExpiredError(error_msg)
-                elif "请求非法" in error_msg:
-                    raise IllegalRequestError(error_msg)
-                else:
-                    raise Exception(error_msg)
-            
-            # 处理查询结果
-            params = result.get("params", {})
-            items = []
-            
-            for item in params.get("list", []):
-                service_name = item.get("domain") if service_type == "1" else item.get("serviceName")
-                service_type_name = {
-                    "1": "网站",
-                    "6": "APP",
-                    "7": "小程序",
-                    "8": "快应用"
-                }.get(service_type, "")
+        max_retries = 5  # 最大重试次数
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                # 检查token
+                if not self.token or time.time() * 1000 >= self.expire_in:
+                    if not self.set_token_from_remote():
+                        return None
                 
-                icp_item = ICPItem(
-                    service_name=service_name,
-                    leader_name=item.get("leaderName", ""),
-                    nature_name=item.get("natureName", ""),
-                    service_licence=item.get("serviceLicence", ""),
-                    unit_name=item.get("unitName", ""),
-                    update_record_time=item.get("updateRecordTime", ""),
-                    service_type=service_type_name
+                # 设置查询请求头
+                headers = self.headers.copy()
+                headers["Token"] = self.token
+                headers["Sign"] = self.sign
+                headers["Content-Type"] = "application/json;charset=UTF-8"
+                
+                # 查询参数
+                data = {
+                    "pageNum": page_num,
+                    "pageSize": page_size,
+                    "unitName": unit_name,
+                    "serviceType": service_type
+                }
+                
+                # 每次请求都创建新的会话
+                session = requests.Session()
+                # 禁用连接池
+                adapter = HTTPAdapter(pool_connections=0, pool_maxsize=0)
+                session.mount("http://", adapter)
+                session.mount("https://", adapter)
+                
+                response = session.post(
+                    self.query_url,
+                    headers=headers,
+                    json=data,
+                    timeout=10,
+                    proxies=self.proxies
                 )
-                items.append(icp_item)
-            
-            return {
-                "pageNum": params.get("pageNum", 0),
-                "pageSize": params.get("pageSize", 0),
-                "total": params.get("total", 0),
-                "items": items
-            }
-            
-        except (CaptchaMismatchError, TokenExpiredError, IllegalRequestError) as e:
-            print(f"查询失败: {str(e)}")
-            return None
-        except Exception as e:
-            print(f"查询异常: {str(e)}")
-            return None
+                
+                if response.status_code == 403:
+                    print(f"IP 被封禁，正在切换 IP... (第 {retry_count + 1} 次尝试)")
+                    retry_count += 1
+                    time.sleep(1)  # 等待一秒再重试
+                    continue
+                
+                if response.status_code != 200:
+                    raise Exception(f"查询失败，状态码: {response.status_code}")
+                
+                result = response.json()
+                if result.get("code") != 200:
+                    error_msg = result.get("msg", "")
+                    if "验证码不匹配" in error_msg:
+                        raise CaptchaMismatchError(error_msg)
+                    elif "token过期" in error_msg:
+                        raise TokenExpiredError(error_msg)
+                    elif "请求非法" in error_msg:
+                        raise IllegalRequestError(error_msg)
+                    else:
+                        raise Exception(error_msg)
+                
+                # 处理查询结果
+                params = result.get("params", {})
+                items = []
+                
+                for item in params.get("list", []):
+                    service_name = item.get("domain") if service_type == "1" else item.get("serviceName")
+                    service_type_name = {
+                        "1": "网站",
+                        "6": "APP",
+                        "7": "小程序",
+                        "8": "快应用"
+                    }.get(service_type, "")
+                    
+                    icp_item = ICPItem(
+                        service_name=service_name,
+                        leader_name=item.get("leaderName", ""),
+                        nature_name=item.get("natureName", ""),
+                        service_licence=item.get("serviceLicence", ""),
+                        unit_name=item.get("unitName", ""),
+                        update_record_time=item.get("updateRecordTime", ""),
+                        service_type=service_type_name
+                    )
+                    items.append(icp_item)
+                
+                return {
+                    "pageNum": params.get("pageNum", 0),
+                    "pageSize": params.get("pageSize", 0),
+                    "total": params.get("total", 0),
+                    "items": items
+                }
+                
+            except (CaptchaMismatchError, TokenExpiredError, IllegalRequestError) as e:
+                print(f"查询失败: {str(e)}")
+                return None
+            except Exception as e:
+                print(f"查询异常: {str(e)}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    print(f"正在重试... (第 {retry_count + 1} 次尝试)")
+                    time.sleep(1)  # 等待一秒再重试
+                    continue
+                return None
+        
+        print(f"达到最大重试次数 ({max_retries})，查询失败")
+        return None
 
 def main():
     # 创建命令行参数解析器
@@ -183,6 +220,7 @@ def main():
     parser.add_argument('--size', type=int, default=40, help='每页记录数，默认为40')
     parser.add_argument('-o', '--output', type=str, help='导出结果到指定文件')
     parser.add_argument('-f', '--file', type=str, help='从文件读取公司名称列表进行批量查询')
+    parser.add_argument('--proxy', type=str, help='指定代理地址，例如：socks5://127.0.0.1:10086')
     
     # 解析命令行参数
     args = parser.parse_args()
@@ -192,7 +230,7 @@ def main():
         parser.error("必须提供公司名称或包含公司名称的文件")
     
     # 创建查询实例
-    icp = ICPQuery()
+    icp = ICPQuery(proxy=args.proxy)
     
     # 用于存储每个公司的域名
     company_domains = {}
