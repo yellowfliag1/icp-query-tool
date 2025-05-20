@@ -7,14 +7,17 @@
 - 支持单个和批量查询公司备案信息
 - 支持多种备案类型查询（网站、APP、小程序、快应用）
 - 支持从文件批量导入公司名称
-- 支持导出查询结果
+- 支持导出查询结果到文本文件和Excel文件
 - 自动处理token过期和验证码问题
 - 内置请求重试和错误处理机制
+- 支持代理IP配置，避免IP限制
 
 ## 安装要求
 
 - Python 3.7+
 - requests库
+- pandas库（用于Excel导出）
+- openpyxl库（用于Excel导出）
 
 ## 安装步骤
 
@@ -25,7 +28,7 @@ git clone https://github.com/yellowfliag1/icp-query-tool.git
 
 2. 安装依赖：
 ```bash
-pip install requests
+pip install requests pandas openpyxl
 ```
 
 ## 使用方法
@@ -49,10 +52,31 @@ python icp.py 公司名称 --type 1  # 1-网站，6-APP，7-小程序，8-快应
 ```bash
 python icp.py -f companies.txt
 ```
-批量查询的时候一定要用IP代理池，比如：https://github.com/jhao104/proxy_pool 和 https://github.com/thinkoaa/Deadpool
-### 导出结果
+
+> ⚠️ 批量查询注意事项：
+> 1. 批量查询时强烈建议使用代理IP，以避免IP被封禁
+> 2. 推荐使用以下代理池项目：
+>    - [Deadpool](https://github.com/thinkoaa/Deadpool): 一个高性能的代理池服务
+>    - [proxy_pool](https://github.com/jhao104/proxy_pool): 一个简单易用的代理池
+> 3. 使用代理示例：
+>    ```bash
+>    # 使用Deadpool代理
+>    python icp.py -f companies.txt --proxy socks5://127.0.0.1:10086
+>    ```
+
+### 导出结果到文本文件
 ```bash
 python icp.py 公司名称 -o result.txt
+```
+
+### 导出结果到Excel文件
+```bash
+python icp.py 公司名称 -e result.xlsx
+```
+
+### 使用代理IP
+```bash
+python icp.py 公司名称 --proxy socks5://127.0.0.1:10086
 ```
 
 ## 参数说明
@@ -65,8 +89,11 @@ python icp.py 公司名称 -o result.txt
   - 8: 快应用
 - `--page`: 页码，默认为1
 - `--size`: 每页记录数，默认为40
-- `-o, --output`: 导出结果到指定文件
+- `-o, --output`: 导出结果到文本文件
+- `-e, --excel`: 导出结果到Excel文件
 - `-f, --file`: 从文件读取公司名称列表
+- `--proxy`: 指定代理地址，例如：socks5://127.0.0.1:10086
+
 ## 使用案例
 
 ### 案例1：查询单个公司网站备案
@@ -92,46 +119,43 @@ python icp.py 小米科技有限责任公司
 --------------------------------------------------------------------------------
 ```
 
-### 案例2：批量查询多个公司
+### 案例2：批量查询并导出到Excel
 ```bash
-# 同时查询多个公司的备案信息
-python icp.py 小米科技有限责任公司,百度在线网络技术(北京)有限公司,阿里巴巴(中国)有限公司
+# 同时查询多个公司的备案信息并导出到Excel
+python icp.py 小米科技有限责任公司,百度在线网络技术(北京)有限公司 -e results.xlsx
 ```
 
-### 案例3：查询APP备案信息
-```bash
-# 查询某公司的APP备案信息
-python icp.py 字节跳动有限公司 --type 6
-```
+Excel文件将包含以下列：
+- 公司主体名称
+- ICP备案/许可证号
+- 审核通过日期
+- 网站域名
 
-### 案例4：从文件批量查询并导出结果
+### 案例3：从文件批量查询并导出到Excel
 ```bash
 # 1. 创建公司列表文件 companies.txt
 echo 小米科技有限责任公司
 百度在线网络技术(北京)有限公司
 阿里巴巴(中国)有限公司 > companies.txt
 
-# 2. 执行批量查询并导出结果
-python icp.py -f companies.txt -o results.txt
+# 2. 执行批量查询并导出到Excel
+python icp.py -f companies.txt -e results.xlsx
 ```
 
-### 案例5：分页查询
+### 案例4：使用代理IP查询
 ```bash
-# 查询第一页，每页20条记录
-python icp.py 腾讯科技(深圳)有限公司 --page 1 --size 20
+# 使用代理IP查询公司备案信息
+python icp.py 腾讯科技(深圳)有限公司 --proxy socks5://127.0.0.1:10086
 ```
 
-### 案例6：查询小程序备案
-```bash
-# 查询某公司的小程序备案信息
-python icp.py 美团点评 --type 7
-```
 ## 注意事项
 
 1. 请确保网络连接正常
 2. 查询间隔建议保持在1秒以上
 3. 文件编码请使用UTF-8
 4. 批量查询时注意控制查询频率
+5. 导出Excel文件需要安装pandas和openpyxl库
+6. 使用代理IP时，请确保代理服务器正常运行
 
 ## 免责声明
 
@@ -161,21 +185,30 @@ python icp.py 美团点评 --type 7
 ## 常见问题
 
 1. Q: 查询失败怎么办？
-   A: 检查网络连接，确认公司名称是否正确，适当增加查询间隔。
+   A: 检查网络连接，确认公司名称是否正确，适当增加查询间隔，考虑使用代理IP。
 
 2. Q: 如何提高查询成功率？
-   A: 控制查询频率，避免频繁请求，必要时使用代理IP。
+   A: 控制查询频率，避免频繁请求，使用代理IP，适当增加重试次数。
 
 3. Q: 批量查询时需要注意什么？
-   A: 建议控制查询频率，适当增加查询间隔，避免IP被封禁。
+   A: 建议控制查询频率，适当增加查询间隔，使用代理IP，避免IP被封禁。
+
+4. Q: Excel导出失败怎么办？
+   A: 确保已安装pandas和openpyxl库，检查文件路径是否有写入权限。
 
 ## 更新日志
 
-### v1.0.0 (2025-05-12)
+### v1.1.0 (2024-03-15)
+- 添加Excel导出功能
+- 支持代理IP配置
+- 优化查询逻辑，避免重复记录
+- 改进错误处理机制
+
+### v1.0.0 (2024-03-12)
 - 初始版本发布
 - 支持基本查询功能
 - 支持批量查询
-- 支持结果导出
+- 支持结果导出到文本文件
 
 ## 许可证
 
