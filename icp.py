@@ -5,6 +5,8 @@ import json
 import base64
 import argparse
 import os
+import pandas as pd
+from datetime import datetime
 from typing import Optional, Dict, List
 from dataclasses import dataclass
 from requests.adapters import HTTPAdapter
@@ -102,7 +104,7 @@ class ICPQuery:
             print(f"获取token失败: {str(e)}")
             return False
 
-    def query(self, unit_name: str, page_num: int = 1, page_size: int = 100, service_type: str = "1") -> Optional[Dict]:
+    def query(self, unit_name: str, page_num: int, page_size: int, service_type: str) -> Optional[Dict]:
         """查询ICP备案信息"""
         max_retries = 5  # 最大重试次数
         retry_count = 0
@@ -216,9 +218,8 @@ def main():
     parser.add_argument('company_name', type=str, nargs='?', help='要查询的公司名称，多个公司用逗号分隔，如：小米,百度')
     parser.add_argument('--type', type=str, choices=['1', '6', '7', '8'], default='1',
                       help='查询类型（默认为1-网站）：1-网站，6-APP，7-小程序，8-快应用')
-    parser.add_argument('--page', type=int, default=1, help='页码，默认为1')
-    parser.add_argument('--size', type=int, default=40, help='每页记录数，默认为40')
     parser.add_argument('-o', '--output', type=str, help='导出结果到指定文件')
+    parser.add_argument('-e', '--excel', type=str, help='导出结果到Excel文件')
     parser.add_argument('-f', '--file', type=str, help='从文件读取公司名称列表进行批量查询')
     parser.add_argument('--proxy', type=str, help='指定代理地址，例如：socks5://127.0.0.1:10086')
     
@@ -234,29 +235,56 @@ def main():
     
     # 用于存储每个公司的域名
     company_domains = {}
+    # 用于存储所有查询结果
+    all_results = []
     
     def process_company(company_name):
-        nonlocal company_domains
+        nonlocal company_domains, all_results
         
-        # 执行查询
-        result = icp.query(
-            unit_name=company_name,
-            page_num=args.page,
-            page_size=args.size,
-            service_type=args.type
-        )
+        processed_records = set()  # 用于存储已处理的记录
+        total_records = 0
+        retry_count = 0
+        max_retries = 10  # 最大重试次数
         
-        if result:
-            print(f"\n查询公司：{company_name}")
-            print(f"查询到 {result['total']} 条记录:")
-            print("=" * 80)
+        while retry_count < max_retries:
+            # 执行查询
+            result = icp.query(
+                unit_name=company_name,
+                page_num=1,  # 始终请求第一页
+                page_size=40,  # 固定使用40条记录
+                service_type=args.type
+            )
+            
+            if not result:
+                print(f"\n查询公司 {company_name} 失败，请检查网络连接或参数是否正确")
+                return False
+            
+            # 第一次查询时打印总记录数
+            if not total_records:
+                total_records = result['total']
+                print(f"\n查询公司：{company_name}")
+                print(f"总记录数：{total_records}")
+                print("=" * 80)
             
             # 存储当前公司的域名
-            company_domains[company_name] = []
+            if not company_domains.get(company_name):
+                company_domains[company_name] = []
             
-            for index, item in enumerate(result["items"], 1):
-                # 打印到控制台
-                print(f"\n记录 {index}:")
+            # 处理当前页的结果
+            new_records = 0  # 记录本页新增的记录数
+            for item in result["items"]:
+                # 使用备案号和域名组合作为唯一标识
+                record_key = f"{item.service_licence}_{item.service_name}"
+                
+                # 如果记录已经处理过，跳过
+                if record_key in processed_records:
+                    continue
+                
+                processed_records.add(record_key)
+                new_records += 1
+                
+                current_index = len(processed_records)
+                print(f"\n记录 {current_index}/{total_records}:")
                 print(f"单位名称: {item.unit_name}")
                 print(f"网站名称: {item.service_name}")
                 print(f"备案号: {item.service_licence}")
@@ -269,10 +297,34 @@ def main():
                 # 收集域名
                 if args.type == '1' and item.service_name:  # 只收集网站类型的域名
                     company_domains[company_name].append(item.service_name)
+                
+                # 收集结果用于Excel导出
+                all_results.append({
+                    '公司主体名称': item.unit_name,
+                    'ICP备案/许可证号': item.service_licence,
+                    '审核通过日期': item.update_record_time,
+                    '网站域名': item.service_name if args.type == '1' else ''
+                })
             
+            # 如果已经获取的记录数达到或超过总记录数，退出
+            if len(processed_records) >= total_records:
+                break
+            
+            # 如果本页没有新记录，增加重试计数
+            if new_records == 0:
+                retry_count += 1
+                print(f"\n本次未获取到新记录，重试次数：{retry_count}/{max_retries}")
+            else:
+                retry_count = 0  # 重置重试计数
+            
+            # 添加延时，避免请求过快
+            time.sleep(1)
+        
+        if len(processed_records) >= total_records:
+            print(f"\n完成查询，共获取 {len(company_domains[company_name])} 条域名记录")
             return True
         else:
-            print(f"\n查询公司 {company_name} 失败，请检查网络连接或参数是否正确")
+            print(f"\n达到最大重试次数，已获取 {len(processed_records)}/{total_records} 条记录")
             return False
     
     # 处理查询
@@ -285,8 +337,6 @@ def main():
             
             for company in companies:
                 process_company(company)
-                # 添加延时，避免请求过快
-                time.sleep(1)
                 
         except Exception as e:
             print(f"读取文件失败：{str(e)}")
@@ -297,10 +347,24 @@ def main():
         
         for company in companies:
             process_company(company)
-            # 添加延时，避免请求过快
-            time.sleep(1)
     
-    # 导出到文件
+    # 导出到Excel
+    if args.excel and all_results:
+        try:
+            # 创建DataFrame
+            df = pd.DataFrame(all_results)
+            
+            # 生成默认文件名（如果未指定）
+            if not args.excel.endswith('.xlsx'):
+                args.excel = f"{args.excel}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            
+            # 导出到Excel
+            df.to_excel(args.excel, index=False, engine='openpyxl')
+            print(f"\n结果已导出到Excel文件：{args.excel}")
+        except Exception as e:
+            print(f"\n导出Excel文件失败：{str(e)}")
+    
+    # 导出到文本文件
     if args.output and company_domains:
         try:
             with open(args.output, 'w', encoding='utf-8') as f:
@@ -320,7 +384,7 @@ def main():
         except Exception as e:
             print(f"\n导出文件失败：{str(e)}")
     
-    # 打印所有域名
+    # 打印域名汇总
     print("\n域名汇总：")
     print("=" * 80)
     for company, domains in company_domains.items():
