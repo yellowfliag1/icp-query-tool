@@ -11,8 +11,7 @@
 ## 环境要求
 
 - Python 3.9+
-- 推荐使用你当前虚拟环境：
-  - `C:\Users\Administrator\Desktop\pythonProject\TG_Spy-main\.venv\Scripts\python.exe`
+- 推荐使用你当前虚拟环境
 
 ## 安装依赖
 
@@ -25,7 +24,7 @@ pip install -r requirements.txt
 ### 1) 单条查询（默认网站）
 
 ```bash
-python miit_icp_auto_query.py "中兴通讯股份有限公司"
+python miit_icp_auto_query.py "深圳市腾讯计算机系统有限公司"
 ```
 
 ### 2) 指定类型查询
@@ -49,9 +48,8 @@ python miit_icp_auto_query.py --input queries.txt
 示例 `queries.txt`：
 
 ```text
-中兴通讯股份有限公司
 深圳市腾讯计算机系统有限公司
-sf-express.com
+baidu.com
 ```
 
 ### 4) 批量查询并导出 JSON
@@ -66,11 +64,6 @@ python miit_icp_auto_query.py --input queries.txt --output result.json
 - `--transport`：`curl` 或 `requests`，默认 `curl`
 - `--manual-offset`：手动滑块偏移（调试用，默认 `-1`）
 
-## 你当前环境直接可用的命令
-
-```powershell
-C:\Users\Administrator\Desktop\pythonProject\TG_Spy-main\.venv\Scripts\python.exe miit_icp_auto_query.py --input queries.txt --service-type 1 --retries 8
-```
 
 ## 注意事项
 
