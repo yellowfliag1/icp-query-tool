@@ -1,219 +1,82 @@
-# ICP备案信息查询工具
+﻿# ICP Query Tool 2.0
 
-一款用于查询ICP备案信息的Python工具，支持查询网站、APP、小程序和快应用的备案信息。参考：https://github.com/fasnow/fine
+基于工信部备案查询接口的自动化查询工具，支持网站 / APP / 小程序 / 快应用，支持单条和 `txt` 批量查询。
 
-## 功能特点
+## 版本说明
 
-- 支持单个和批量查询公司备案信息
-- 支持多种备案类型查询（网站、APP、小程序、快应用）
-- 支持从文件批量导入公司名称
-- 支持导出查询结果到文本文件和Excel文件
-- 自动处理token过期和验证码问题
-- 内置请求重试和错误处理机制
-- 支持代理IP配置，避免IP限制
+- `v2.0`：使用 `ddddocr` 滑块识别，支持 `curl_cffi` 传输层，增强抗风控能力。
+- 入口脚本：`miit_icp_auto_query.py`
+- 兼容入口：`icp.py`（内部转发到 2.0）
 
-## 安装要求
+## 环境要求
 
-- Python 3.7+
-- requests库
-- pandas库（用于Excel导出）
-- openpyxl库（用于Excel导出）
+- Python 3.9+
+- 推荐使用你当前虚拟环境：
+  - `C:\Users\Administrator\Desktop\pythonProject\TG_Spy-main\.venv\Scripts\python.exe`
 
-## 安装步骤
+## 安装依赖
 
-1. 克隆项目到本地：
 ```bash
-git clone https://github.com/yellowfliag1/icp-query-tool.git
+pip install -r requirements.txt
 ```
 
-2. 安装依赖：
+## 命令行用法
+
+### 1) 单条查询（默认网站）
+
 ```bash
-pip install requests pandas openpyxl
+python miit_icp_auto_query.py "中兴通讯股份有限公司"
 ```
 
-## 使用方法
+### 2) 指定类型查询
 
-### 基本查询
 ```bash
-python icp.py 公司名称
+python miit_icp_auto_query.py "深圳市腾讯计算机系统有限公司" --service-type 7
 ```
 
-### 多公司查询
+`--service-type` 对应关系：
+- `1` 网站
+- `6` APP
+- `7` 小程序
+- `8` 快应用
+
+### 3) 批量查询（txt 每行一个关键词）
+
 ```bash
-python icp.py 公司1,公司2,公司3
+python miit_icp_auto_query.py --input queries.txt
 ```
 
-### 指定查询类型
+示例 `queries.txt`：
+
+```text
+中兴通讯股份有限公司
+深圳市腾讯计算机系统有限公司
+sf-express.com
+```
+
+### 4) 批量查询并导出 JSON
+
 ```bash
-python icp.py 公司名称 --type 1  # 1-网站，6-APP，7-小程序，8-快应用
+python miit_icp_auto_query.py --input queries.txt --output result.json
 ```
 
-### 从文件批量查询
-```bash
-python icp.py -f companies.txt
-```
+### 5) 常用可选参数（都已设默认值）
 
-> ⚠️ 批量查询注意事项：
-> 1. 批量查询时强烈建议使用代理IP，以避免IP被封禁
-> 2. 推荐使用以下代理池项目：
->    - [Deadpool](https://github.com/thinkoaa/Deadpool): 一个高性能的代理池服务
->    - [proxy_pool](https://github.com/jhao104/proxy_pool): 一个简单易用的代理池
-> 3. 使用代理示例：
->    ```bash
->    # 使用Deadpool代理
->    python icp.py -f companies.txt --proxy socks5://127.0.0.1:10086
->    ```
+- `--retries`：验证码重试次数，默认 `5`
+- `--transport`：`curl` 或 `requests`，默认 `curl`
+- `--manual-offset`：手动滑块偏移（调试用，默认 `-1`）
 
-### 导出结果到文本文件
-```bash
-python icp.py 公司名称 -o result.txt
-```
+## 你当前环境直接可用的命令
 
-### 导出结果到Excel文件
-```bash
-python icp.py 公司名称 -e result.xlsx
-```
-
-### 使用代理IP
-```bash
-python icp.py 公司名称 --proxy socks5://127.0.0.1:10086
-```
-
-## 参数说明
-
-- `company_name`: 要查询的公司名称，多个公司用逗号分隔
-- `--type`: 查询类型（默认为1-网站）
-  - 1: 网站
-  - 6: APP
-  - 7: 小程序
-  - 8: 快应用
-- `--page`: 页码，默认为1
-- `--size`: 每页记录数，默认为40
-- `-o, --output`: 导出结果到文本文件
-- `-e, --excel`: 导出结果到Excel文件
-- `-f, --file`: 从文件读取公司名称列表
-- `--proxy`: 指定代理地址，例如：socks5://127.0.0.1:10086
-
-## 使用案例
-
-### 案例1：查询单个公司网站备案
-```bash
-# 查询小米公司的网站备案信息
-python icp.py 小米科技有限责任公司
-```
-
-输出示例：
-```
-查询公司：小米科技有限责任公司
-查询到 5 条记录:
-================================================================================
-
-记录 1:
-单位名称: 小米科技有限责任公司
-网站名称: mi.com
-备案号: 京ICP备10046444号-1
-备案类型: 网站
-备案法人: 雷军
-单位性质: 企业
-审核日期: 2023-12-20
---------------------------------------------------------------------------------
-```
-
-### 案例2：批量查询并导出到Excel
-```bash
-# 同时查询多个公司的备案信息并导出到Excel
-python icp.py 小米科技有限责任公司,百度在线网络技术(北京)有限公司 -e results.xlsx
-```
-
-Excel文件将包含以下列：
-- 公司主体名称
-- ICP备案/许可证号
-- 审核通过日期
-- 网站域名
-
-### 案例3：从文件批量查询并导出到Excel
-```bash
-# 1. 创建公司列表文件 companies.txt
-echo 小米科技有限责任公司
-百度在线网络技术(北京)有限公司
-阿里巴巴(中国)有限公司 > companies.txt
-
-# 2. 执行批量查询并导出到Excel
-python icp.py -f companies.txt -e results.xlsx
-```
-
-### 案例4：使用代理IP查询
-```bash
-# 使用代理IP查询公司备案信息
-python icp.py 腾讯科技(深圳)有限公司 --proxy socks5://127.0.0.1:10086
+```powershell
+C:\Users\Administrator\Desktop\pythonProject\TG_Spy-main\.venv\Scripts\python.exe miit_icp_auto_query.py --input queries.txt --service-type 1 --retries 8
 ```
 
 ## 注意事项
 
-1. 请确保网络连接正常
-2. 查询间隔建议保持在1秒以上
-3. 文件编码请使用UTF-8
-4. 批量查询时注意控制查询频率
-5. 导出Excel文件需要安装pandas和openpyxl库
-6. 使用代理IP时，请确保代理服务器正常运行
+- 高频查询可能触发目标站风控（403），建议降低频率并重试。
+- 仅用于学习和合规场景，请遵守目标站点条款与相关法律法规。
 
-## 免责声明
+## License
 
-1. 本工具仅供学习和研究使用，请勿用于任何商业用途。
-
-2. 使用本工具时，请遵守相关法律法规和网站的使用条款。
-
-3. 本工具不对以下情况负责：
-   - 因使用本工具导致的任何直接或间接损失
-   - 因违反相关法律法规或网站使用条款导致的任何后果
-   - 因网络问题、服务器问题等不可抗力因素导致的数据不准确或查询失败
-
-4. 使用本工具即表示您同意：
-   - 遵守所有适用的法律法规
-   - 承担使用本工具的所有风险
-   - 不会将本工具用于任何非法用途
-
-5. 作者不对使用本工具产生的任何后果负责，包括但不限于：
-   - 账号被封禁
-   - IP被限制
-   - 数据不准确
-   - 系统故障
-   - 其他任何形式的损失
-
-6. 如遇到任何问题，请自行承担风险，作者不提供任何形式的保证或支持。
-
-## 常见问题
-
-1. Q: 查询失败怎么办？
-   A: 检查网络连接，确认公司名称是否正确，适当增加查询间隔，考虑使用代理IP。
-
-2. Q: 如何提高查询成功率？
-   A: 控制查询频率，避免频繁请求，使用代理IP，适当增加重试次数。
-
-3. Q: 批量查询时需要注意什么？
-   A: 建议控制查询频率，适当增加查询间隔，使用代理IP，避免IP被封禁。
-
-4. Q: Excel导出失败怎么办？
-   A: 确保已安装pandas和openpyxl库，检查文件路径是否有写入权限。
-
-## 更新日志
-
-### v1.1.0 (2025-05-20)
-- 添加Excel导出功能
-- 支持代理IP配置
-- 优化查询逻辑，避免重复记录
-- 改进错误处理机制
-
-### v1.0.0 (2025-05-12)
-- 初始版本发布
-- 支持基本查询功能
-- 支持批量查询
-- 支持结果导出到文本文件
-
-## 许可证
-
-MIT License
-
-## 贡献
-
-欢迎提交Issue和Pull Request来帮助改进这个项目。 
+MIT
