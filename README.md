@@ -80,3 +80,22 @@ C:\Users\Administrator\Desktop\pythonProject\TG_Spy-main\.venv\Scripts\python.ex
 ## License
 
 MIT
+
+## Web 界面（2.0）
+
+启动：
+
+```bash
+python -m uvicorn miit_icp_web:app --host 0.0.0.0 --port 8000
+```
+
+访问：
+
+- `http://127.0.0.1:8000`
+
+说明：
+
+- 支持主体名/域名查询
+- 支持批量（文本框每行一个关键词）
+- 搜索结果列表 + 详情展开（空字段自动隐藏）
+- APP/小程序/快应用会补调详情接口 `queryDetailByAppAndMiniId`
