@@ -199,13 +199,19 @@ class MiitIcpAutoClient:
             raise RuntimeError(f"checkImage success but sign missing: {data}")
         return offset, self.sign
 
-    def query_company(self, company: str, service_type: int = 1) -> dict[str, Any]:
+    def query_company(
+        self,
+        company: str,
+        service_type: int = 1,
+        page_num: int | str | None = None,
+        page_size: int | str | None = None,
+    ) -> dict[str, Any]:
         if not self.uuid or not self.sign:
             raise RuntimeError("uuid/sign missing, verify slider first")
         headers = {"uuid": self.uuid, "sign": self.sign}
         body = {
-            "pageNum": "",
-            "pageSize": "",
+            "pageNum": "" if page_num in (None, "") else str(page_num),
+            "pageSize": "" if page_size in (None, "") else str(page_size),
             "unitName": company,
             "serviceType": service_type,
         }
@@ -236,6 +242,57 @@ class MiitIcpAutoClient:
             return data
         snippet = json.dumps(data, ensure_ascii=False)[:400]
         raise RuntimeError(f"query business failed: {snippet}")
+
+    @staticmethod
+    def _to_int(v: Any, default: int) -> int:
+        try:
+            return int(v)
+        except Exception:
+            return default
+
+    def query_company_all(
+        self,
+        company: str,
+        service_type: int = 1,
+        page_size: int = 10,
+        max_pages: int = 2000,
+    ) -> dict[str, Any]:
+        # 同一会话 token + uuid + sign 连续翻页，避免不同 token 下顺序漂移。
+        first = self.query_company(company, service_type, page_num=1, page_size=page_size)
+        first_params = first.get("params") or {}
+        first_list = first_params.get("list") or []
+        all_records: list[Any] = list(first_list) if isinstance(first_list, list) else []
+
+        total = self._to_int(first_params.get("total"), len(all_records))
+        pages = max(1, self._to_int(first_params.get("pages"), 1))
+        current_page = max(1, self._to_int(first_params.get("pageNum"), 1))
+        limit_pages = max(1, max_pages)
+        if pages > limit_pages:
+            pages = limit_pages
+
+        for p in range(current_page + 1, pages + 1):
+            page_data = self.query_company(company, service_type, page_num=p, page_size=page_size)
+            page_params = page_data.get("params") or {}
+            page_list = page_params.get("list") or []
+            if isinstance(page_list, list):
+                all_records.extend(page_list)
+
+        merged = dict(first)
+        merged_params = dict(first_params)
+        merged_params["list"] = all_records
+        merged_params["size"] = len(all_records)
+        merged_params["total"] = total
+        merged_params["pageNum"] = 1
+        merged_params["pageSize"] = page_size
+        merged_params["pages"] = pages
+        merged_params["startRow"] = 0
+        merged_params["endRow"] = len(all_records)
+        merged_params["hasNextPage"] = False
+        merged_params["nextPage"] = 0
+        merged_params["hasPreviousPage"] = False
+        merged_params["prePage"] = 0
+        merged["params"] = merged_params
+        return merged
 
     def query_detail_by_app_and_mini_id(self, data_id: int | str, service_type: int | None = None) -> dict[str, Any]:
         if not self.uuid or not self.sign:
@@ -292,6 +349,8 @@ def main() -> None:
     parser.add_argument("--input", default="", help="??txt?????????????")
     parser.add_argument("--output", default="", help="????json????????")
     parser.add_argument("--service-type", type=int, default=1, help="1=??, 6=APP, 7=???, 8=???")
+    parser.add_argument("--page-size", type=int, default=10, help="??????")
+    parser.add_argument("--max-pages", type=int, default=2000, help="????????????")
     parser.add_argument("--retries", type=int, default=5, help="???????")
     parser.add_argument("--manual-offset", type=int, default=-1, help="???????????")
     parser.add_argument("--transport", choices=["curl", "requests"], default="curl", help="????")
@@ -331,7 +390,12 @@ def main() -> None:
             else:
                 raise RuntimeError(f"captcha verify failed after retries: {last_err}")
 
-        result = client.query_company(query_word, args.service_type)
+        result = client.query_company_all(
+            query_word,
+            service_type=args.service_type,
+            page_size=max(1, args.page_size),
+            max_pages=max(1, args.max_pages),
+        )
         return {"query": query_word, "offset": used_offset, "ok": True, "result": result}
 
     if args.input:

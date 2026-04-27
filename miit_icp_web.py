@@ -470,6 +470,8 @@ sf-express.com</textarea>
 class BatchQueryRequest(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     service_type: int = 1
+    page_size: int = 10
+    max_pages: int = 2000
     retries: int = 8
     transport: str = "curl"
     delay_sec: float = 0.2
@@ -505,7 +507,14 @@ def _merge_detail_into_record(record: dict[str, Any], detail_resp: dict[str, Any
     return merged
 
 
-def _query_with_client(client: MiitIcpAutoClient, keyword: str, service_type: int, retries: int) -> dict[str, Any]:
+def _query_with_client(
+    client: MiitIcpAutoClient,
+    keyword: str,
+    service_type: int,
+    retries: int,
+    page_size: int,
+    max_pages: int,
+) -> dict[str, Any]:
     last_err: Exception | None = None
     used_offset = -1
     for _ in range(max(1, retries)):
@@ -520,7 +529,12 @@ def _query_with_client(client: MiitIcpAutoClient, keyword: str, service_type: in
         raise RuntimeError(f"captcha verify failed: {last_err}")
 
     # 官方 ICP 备案查询前端使用 unitName + serviceType 参数；实测域名关键词也可查到主体信息。
-    raw = client.query_company(keyword, service_type)
+    raw = client.query_company_all(
+        keyword,
+        service_type=service_type,
+        page_size=max(1, page_size),
+        max_pages=max(1, max_pages),
+    )
     params = raw.get("params") or {}
     records = params.get("list") or []
 
@@ -573,6 +587,10 @@ def batch_query(req: BatchQueryRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="单次最多 100 个查询词")
     if req.transport not in ("curl", "requests"):
         raise HTTPException(status_code=400, detail="transport 仅支持 curl/requests")
+    if req.page_size <= 0 or req.page_size > 200:
+        raise HTTPException(status_code=400, detail="page_size 需在 1~200 之间")
+    if req.max_pages <= 0 or req.max_pages > 5000:
+        raise HTTPException(status_code=400, detail="max_pages 需在 1~5000 之间")
 
     results: list[dict[str, Any]] = []
     client = MiitIcpAutoClient(transport=req.transport)
@@ -594,6 +612,8 @@ def batch_query(req: BatchQueryRequest) -> dict[str, Any]:
                 keyword=keyword,
                 service_type=req.service_type,
                 retries=req.retries,
+                page_size=req.page_size,
+                max_pages=req.max_pages,
             )
         except Exception as exc:
             err = str(exc)
