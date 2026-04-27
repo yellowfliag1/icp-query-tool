@@ -167,8 +167,8 @@ sf-express.com</textarea>
           </div>
         </div>
         <div class="row">
-          <button id="runBtn" type="button" class="btn">搜索</button>
-          <button id="csvBtn" type="button" class="btn-alt" disabled>导出CSV</button>
+          <button id="runBtn" type="button" class="btn" onclick="window.__manualRun && window.__manualRun()">搜索</button>
+          <button id="csvBtn" type="button" class="btn-alt" onclick="window.__manualExport && window.__manualExport()" disabled>导出CSV</button>
         </div>
         <div id="status" class="status"></div>
       </div>
@@ -562,6 +562,7 @@ sf-express.com</textarea>
       }
     }
     window.__manualRun = runSearch;
+    window.__manualExport = exportCsv;
     runBtn.addEventListener("click", runSearch);
 
     async function exportCsv() {
@@ -790,7 +791,14 @@ def _query_with_client(
 
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
-    return HTML_PAGE
+    return HTMLResponse(
+        content=HTML_PAGE,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.post("/api/start_query")
