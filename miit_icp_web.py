@@ -167,8 +167,8 @@ sf-express.com</textarea>
           </div>
         </div>
         <div class="row">
-          <button id="runBtn" class="btn">搜索</button>
-          <button id="csvBtn" class="btn-alt" disabled>导出CSV</button>
+          <button id="runBtn" type="button" class="btn">搜索</button>
+          <button id="csvBtn" type="button" class="btn-alt" disabled>导出CSV</button>
         </div>
         <div id="status" class="status"></div>
       </div>
@@ -477,7 +477,7 @@ sf-express.com</textarea>
       }
     }
 
-    runBtn.onclick = async () => {
+    async function runSearch() {
       const keywords = lines(document.getElementById("keywords").value);
       if (!keywords.length) {
         statusEl.textContent = "????????";
@@ -560,9 +560,11 @@ sf-express.com</textarea>
       } finally {
         runBtn.disabled = false;
       }
-    };
+    }
+    window.__manualRun = runSearch;
+    runBtn.addEventListener("click", runSearch);
 
-    csvBtn.onclick = async () => {
+    async function exportCsv() {
       if (!lastResults.length) return;
       const resp = await fetch("/api/export_csv", {
         method: "POST",
@@ -576,7 +578,8 @@ sf-express.com</textarea>
       a.download = "icp_batch_results.csv";
       a.click();
       URL.revokeObjectURL(a.href);
-    };
+    }
+    csvBtn.addEventListener("click", exportCsv);
   </script>
 </body>
 </html>
