@@ -232,16 +232,17 @@ sf-express.com</textarea>
     const otherBody = document.getElementById("otherBody");
 
     let lastResults = [];
-    let flatRows = [];
-    let currentPage = 1;
-    const viewPageSize = 10;
+    let localRows = [];
+    let localPage = 1;
+    const localPageSize = 10;
+
     let remoteSessionId = "";
     let remoteKeyword = "";
     let remotePage = 1;
     let remotePages = 1;
     let remoteTotal = 0;
     let remotePageSize = 10;
-    let loadingRemotePage = false;
+    let loading = false;
 
     const labelMap = {
       domain: "??",
@@ -249,25 +250,20 @@ sf-express.com</textarea>
       unitName: "??????",
       natureName: "??????",
       leaderName: "???",
-      mainId: "??ID",
       mainLicence: "ICP?????",
-      serviceId: "??ID",
       serviceLicence: "?????",
       serviceName: "????",
       contentTypeName: "????",
       accessName: "????",
       appName: "????",
-      appVersion: "????",
-      appStore: "????",
       miniProgramName: "?????",
-      miniName: "?????",
       fastAppName: "?????",
       limitAccess: "???????",
       updateRecordTime: "????",
     };
 
     function esc(v) {
-      return String(v ?? "")
+      return String(v == null ? "" : v)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -275,8 +271,8 @@ sf-express.com</textarea>
         .replace(/'/g, "&#39;");
     }
 
-    function lines(v) {
-      return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    function splitLines(v) {
+      return String(v || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     }
 
     function isEmpty(v) {
@@ -285,147 +281,108 @@ sf-express.com</textarea>
              (typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0);
     }
 
-    function toDisplayKey(k) {
-      return labelMap[k] || k;
+    function setStatus(text, bad) {
+      statusEl.textContent = text;
+      statusEl.className = bad ? "status bad" : "status ok";
     }
 
-    function splitSections(rec) {
-      const src = rec || {};
-      const subject = {};
-      const service = {};
-      const other = {};
-
-      const subjectRequired = ["mainLicence", "updateRecordTime", "unitName", "natureName"];
-      const serviceRequired = ["serviceLicence", "serviceName", "contentTypeName", "accessName", "appName", "miniProgramName", "fastAppName", "limitAccess"];
-
-      for (const k of subjectRequired) subject[k] = src[k] ?? "";
-      for (const k of serviceRequired) service[k] = src[k] ?? "";
-
-      const subjectKeys = new Set(["mainId", "mainLicence", "unitName", "natureName", "leaderName", "updateRecordTime"]);
-      const serviceKeys = new Set([
-        "serviceId", "serviceLicence", "serviceName", "contentTypeName", "accessName",
-        "appName", "appVersion", "appStore", "miniProgramName", "miniName", "fastAppName",
-        "limitAccess", "domain", "domainId", "serviceType"
-      ]);
-
-      for (const [k, v] of Object.entries(src)) {
-        if (subjectKeys.has(k) || k.startsWith("main")) {
-          if (!isEmpty(v)) subject[k] = v;
-        } else if (serviceKeys.has(k) || k.startsWith("service") || k.startsWith("domain")) {
-          if (!isEmpty(v)) service[k] = v;
-        } else if (!isEmpty(v)) {
-          other[k] = v;
-        }
-      }
-      return { subject, service, other, subjectRequired, serviceRequired };
-    }
-
-    function renderKVTbody(target, obj, alwaysKeys = []) {
+    function renderKV(target, obj) {
       target.innerHTML = "";
-      const keys = [...new Set([...alwaysKeys, ...Object.keys(obj)])];
-      if (!keys.length) return false;
+      const keys = Object.keys(obj || {});
       for (const k of keys) {
         const val = obj[k];
-        if (!alwaysKeys.includes(k) && isEmpty(val)) continue;
+        if (isEmpty(val)) continue;
         const tr = document.createElement("tr");
-        tr.innerHTML = `<th>${esc(toDisplayKey(k))}</th><td>${esc(isEmpty(val) ? "-" : val)}</td>`;
+        tr.innerHTML = "<th>" + esc(labelMap[k] || k) + "</th><td>" + esc(val) + "</td>";
         target.appendChild(tr);
       }
       return target.children.length > 0;
     }
 
     function showDetail(row) {
-      detailCard.classList.remove("hidden");
       const rec = row.record || {};
-      detailHint.textContent = `????${row.query} | ??????${rec.serviceLicence || "-"} | ?????${rec.unitName || "-"}`;
-      const sec = splitSections(rec);
-      subjectBlock.classList.toggle("hidden", !renderKVTbody(subjectBody, sec.subject, sec.subjectRequired));
-      serviceBlock.classList.toggle("hidden", !renderKVTbody(serviceBody, sec.service, sec.serviceRequired));
-      otherBlock.classList.toggle("hidden", !renderKVTbody(otherBody, sec.other));
+      detailHint.textContent = "????" + row.query + " | ??????" + (rec.serviceLicence || "-") + " | ?????" + (rec.unitName || "-");
+      const subject = {
+        mainLicence: rec.mainLicence || "",
+        updateRecordTime: rec.updateRecordTime || "",
+        unitName: rec.unitName || "",
+        natureName: rec.natureName || "",
+        leaderName: rec.leaderName || "",
+      };
+      const service = {
+        serviceLicence: rec.serviceLicence || "",
+        serviceName: rec.serviceName || "",
+        contentTypeName: rec.contentTypeName || "",
+        accessName: rec.accessName || "",
+        appName: rec.appName || "",
+        miniProgramName: rec.miniProgramName || "",
+        fastAppName: rec.fastAppName || "",
+        limitAccess: rec.limitAccess || "",
+        domain: rec.domain || "",
+      };
+      const other = {};
+      for (const [k, v] of Object.entries(rec)) {
+        if (!(k in subject) && !(k in service) && !isEmpty(v)) other[k] = v;
+      }
+      subjectBlock.classList.toggle("hidden", !renderKV(subjectBody, subject));
+      serviceBlock.classList.toggle("hidden", !renderKV(serviceBody, service));
+      otherBlock.classList.toggle("hidden", !renderKV(otherBody, other));
+      detailCard.classList.remove("hidden");
       detailCard.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    function flattenResults(results) {
-      const out = [];
-      let seq = 1;
-      for (const group of results || []) {
-        if (!group.ok) {
-          out.push({ seq: seq++, query: group.query || "", status: "??", error: group.error || "", record: null });
-          continue;
-        }
-        const records = group.records || [];
-        if (!records.length) {
-          out.push({ seq: seq++, query: group.query || "", status: "??(0?)", error: "", record: {} });
-          continue;
-        }
-        for (const rec of records) {
-          out.push({ seq: seq++, query: group.query || "", status: "??", error: "", record: rec || {} });
-        }
-      }
-      return out;
-    }
-
-    function renderResultTable(rows) {
+    function renderRows(rows) {
       resultBody.innerHTML = "";
-      rows.forEach((row, idx) => {
+      rows.forEach((row, i) => {
         const rec = row.record || {};
-        const isFailed = row.status === "??";
+        const failed = row.status === "??";
         const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${row.seq}</td>
-          <td>${esc(row.query)}</td>
-          <td>${esc(rec.unitName || "")}</td>
-          <td>${esc(rec.natureName || "")}</td>
-          <td>${esc(rec.serviceLicence || "")}</td>
-          <td>${esc(rec.updateRecordTime || "")}</td>
-          <td class="${isFailed ? "bad" : "ok"}">${esc(isFailed ? row.error : row.status)}</td>
-          <td>${(!isFailed && rec && Object.keys(rec).length > 0) ? `<button class="op-btn" data-idx="${idx}">??</button>` : "-"}</td>
-        `;
+        tr.innerHTML = "<td>" + row.seq + "</td>" +
+          "<td>" + esc(row.query) + "</td>" +
+          "<td>" + esc(rec.unitName || "") + "</td>" +
+          "<td>" + esc(rec.natureName || "") + "</td>" +
+          "<td>" + esc(rec.serviceLicence || "") + "</td>" +
+          "<td>" + esc(rec.updateRecordTime || "") + "</td>" +
+          "<td class='" + (failed ? "bad" : "ok") + "'>" + esc(failed ? (row.error || "??") : "??") + "</td>" +
+          "<td>" + ((!failed && rec && Object.keys(rec).length > 0) ? ("<button type='button' class='op-btn' data-i='" + i + "'>??</button>") : "-") + "</td>";
         resultBody.appendChild(tr);
       });
-      resultBody.querySelectorAll("button[data-idx]").forEach(btn => {
-        btn.addEventListener("click", () => showDetail(rows[Number(btn.getAttribute("data-idx"))]));
+      resultBody.querySelectorAll("button[data-i]").forEach(btn => {
+        btn.addEventListener("click", function() {
+          const idx = Number(btn.getAttribute("data-i"));
+          showDetail(rows[idx]);
+        });
       });
     }
 
-    function renderLocalPagedTable() {
-      const total = flatRows.length;
+    function renderLocalPager() {
+      const total = localRows.length;
       if (!total) {
         pagerEl.classList.add("hidden");
         pagerEl.innerHTML = "";
         resultBody.innerHTML = "";
         return;
       }
-      const pages = Math.max(1, Math.ceil(total / viewPageSize));
-      currentPage = Math.min(Math.max(1, currentPage), pages);
-      const start = (currentPage - 1) * viewPageSize;
-      const end = start + viewPageSize;
-      renderResultTable(flatRows.slice(start, end));
+      const pages = Math.max(1, Math.ceil(total / localPageSize));
+      if (localPage < 1) localPage = 1;
+      if (localPage > pages) localPage = pages;
+      const start = (localPage - 1) * localPageSize;
+      const rows = localRows.slice(start, start + localPageSize);
+      renderRows(rows);
+
       pagerEl.classList.remove("hidden");
-      pagerEl.innerHTML = `
-        <button id="pgPrev" ${currentPage <= 1 ? "disabled" : ""}>???</button>
-        <span>? ${currentPage}/${pages} ??? ${total} ?</span>
-        <button id="pgNext" ${currentPage >= pages ? "disabled" : ""}>???</button>
-      `;
-      document.getElementById("pgPrev")?.addEventListener("click", () => {
-        if (currentPage > 1) {
-          currentPage -= 1;
-          renderLocalPagedTable();
-        }
-      });
-      document.getElementById("pgNext")?.addEventListener("click", () => {
-        if (currentPage < pages) {
-          currentPage += 1;
-          renderLocalPagedTable();
-        }
-      });
+      pagerEl.innerHTML = "<button type='button' id='pgPrev' " + (localPage <= 1 ? "disabled" : "") + ">???</button>" +
+                         "<span>? " + localPage + "/" + pages + " ??? " + total + " ?</span>" +
+                         "<button type='button' id='pgNext' " + (localPage >= pages ? "disabled" : "") + ">???</button>";
+      document.getElementById("pgPrev").onclick = function() { localPage -= 1; renderLocalPager(); };
+      document.getElementById("pgNext").onclick = function() { localPage += 1; renderLocalPager(); };
     }
 
-    function mapRemoteRows(query, records, pageNum, pageSize) {
-      const start = (Math.max(1, pageNum) - 1) * Math.max(1, pageSize) + 1;
+    function mapRemote(records, pageNum, pageSize) {
+      const base = (Math.max(1, pageNum) - 1) * Math.max(1, pageSize);
       return (records || []).map((rec, idx) => ({
-        seq: start + idx,
-        query,
+        seq: base + idx + 1,
+        query: remoteKeyword,
         status: "??",
         error: "",
         record: rec || {},
@@ -434,74 +391,64 @@ sf-express.com</textarea>
 
     function renderRemotePager() {
       pagerEl.classList.remove("hidden");
-      pagerEl.innerHTML = `
-        <button id="pgPrev" ${remotePage <= 1 || loadingRemotePage ? "disabled" : ""}>???</button>
-        <span>? ${remotePage}/${remotePages} ??? ${remoteTotal} ?</span>
-        <button id="pgNext" ${remotePage >= remotePages || loadingRemotePage ? "disabled" : ""}>???</button>
-      `;
-      document.getElementById("pgPrev")?.addEventListener("click", async () => {
-        if (remotePage > 1) await loadRemotePage(remotePage - 1);
-      });
-      document.getElementById("pgNext")?.addEventListener("click", async () => {
-        if (remotePage < remotePages) await loadRemotePage(remotePage + 1);
-      });
+      pagerEl.innerHTML = "<button type='button' id='pgPrev' " + ((remotePage <= 1 || loading) ? "disabled" : "") + ">???</button>" +
+                         "<span>? " + remotePage + "/" + remotePages + " ??? " + remoteTotal + " ?</span>" +
+                         "<button type='button' id='pgNext' " + ((remotePage >= remotePages || loading) ? "disabled" : "") + ">???</button>";
+      document.getElementById("pgPrev").onclick = async function() { if (remotePage > 1) await loadRemotePage(remotePage - 1); };
+      document.getElementById("pgNext").onclick = async function() { if (remotePage < remotePages) await loadRemotePage(remotePage + 1); };
     }
 
     async function loadRemotePage(pageNum) {
-      if (!remoteSessionId || loadingRemotePage) return;
-      loadingRemotePage = true;
-      statusEl.textContent = `????? ${pageNum} ?...`;
-      statusEl.className = "status";
+      if (!remoteSessionId || loading) return;
+      loading = true;
+      setStatus("????? " + pageNum + " ?...", false);
       renderRemotePager();
       try {
         const resp = await fetch("/api/query_page", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: remoteSessionId, page_num: pageNum }),
+          body: JSON.stringify({ session_id: remoteSessionId, page_num: pageNum })
         });
         const data = await resp.json();
-        if (!resp.ok) throw new Error(data.detail || "??????");
+        if (!resp.ok) throw new Error(data.detail || "????");
         remotePage = Number(data.pageNum || pageNum || 1);
         remotePages = Math.max(1, Number(data.pages || 1));
         remoteTotal = Math.max(0, Number(data.total || 0));
-        const rows = mapRemoteRows(remoteKeyword, data.records || [], remotePage, Number(data.pageSize || remotePageSize || 10));
-        renderResultTable(rows);
-        statusEl.textContent = `???? ${remotePage}/${remotePages} ??? ${remoteTotal} ?`;
-        statusEl.className = "status ok";
+        const rows = mapRemote(data.records || [], remotePage, Number(data.pageSize || remotePageSize || 10));
+        renderRows(rows);
+        setStatus("???? " + remotePage + "/" + remotePages + " ??? " + remoteTotal + " ?", false);
       } catch (e) {
-        statusEl.textContent = "????: " + e.message;
-        statusEl.className = "status bad";
+        setStatus("????: " + e.message, true);
       } finally {
-        loadingRemotePage = false;
+        loading = false;
         renderRemotePager();
       }
     }
 
     async function runSearch() {
-      const keywords = lines(document.getElementById("keywords").value);
+      const keywords = splitLines(document.getElementById("keywords").value);
       if (!keywords.length) {
-        statusEl.textContent = "????????";
-        statusEl.className = "status bad";
+        setStatus("???????", true);
         return;
       }
 
       runBtn.disabled = true;
       csvBtn.disabled = true;
-      statusEl.textContent = "???...";
-      statusEl.className = "status";
+      setStatus("???...", false);
       resultBody.innerHTML = "";
       pagerEl.classList.add("hidden");
       pagerEl.innerHTML = "";
       detailCard.classList.add("hidden");
+
       lastResults = [];
-      flatRows = [];
-      currentPage = 1;
+      localRows = [];
+      localPage = 1;
       remoteSessionId = "";
       remoteKeyword = "";
       remotePage = 1;
       remotePages = 1;
       remoteTotal = 0;
-      remotePageSize = viewPageSize;
+      remotePageSize = localPageSize;
 
       const commonPayload = {
         service_type: Number(document.getElementById("serviceType").value),
@@ -511,66 +458,66 @@ sf-express.com</textarea>
 
       try {
         if (keywords.length === 1) {
-          const startResp = await fetch("/api/start_query", {
+          const resp = await fetch("/api/start_query", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              keyword: keywords[0],
-              ...commonPayload,
-              page_size: viewPageSize,
-            }),
-          });
-          const startData = await startResp.json();
-          if (!startResp.ok) throw new Error(startData.detail || "????");
-
-          remoteSessionId = startData.session_id || "";
-          remoteKeyword = keywords[0];
-          remotePage = Number(startData.pageNum || 1);
-          remotePages = Math.max(1, Number(startData.pages || 1));
-          remoteTotal = Math.max(0, Number(startData.total || 0));
-          remotePageSize = Math.max(1, Number(startData.pageSize || viewPageSize));
-          const rows = mapRemoteRows(remoteKeyword, startData.records || [], remotePage, remotePageSize);
-          renderResultTable(rows);
-          renderRemotePager();
-          statusEl.textContent = `???? ${remotePage}/${remotePages} ??? ${remoteTotal} ??????????`;
-          statusEl.className = "status ok";
-        } else {
-          const resp = await fetch("/api/batch_query", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              keywords,
-              ...commonPayload,
-              delay_sec: Number(document.getElementById("delaySec").value),
-            }),
+            body: JSON.stringify({ keyword: keywords[0], page_size: localPageSize, ...commonPayload })
           });
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.detail || "????");
+
+          remoteSessionId = data.session_id || "";
+          remoteKeyword = keywords[0];
+          remotePage = Number(data.pageNum || 1);
+          remotePages = Math.max(1, Number(data.pages || 1));
+          remoteTotal = Math.max(0, Number(data.total || 0));
+          remotePageSize = Math.max(1, Number(data.pageSize || localPageSize));
+          renderRows(mapRemote(data.records || [], remotePage, remotePageSize));
+          renderRemotePager();
+          setStatus("???? " + remotePage + "/" + remotePages + " ??? " + remoteTotal + " ?????????", false);
+        } else {
+          const delaySec = Number(document.getElementById("delaySec").value);
+          const resp = await fetch("/api/batch_query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ keywords, delay_sec: delaySec, ...commonPayload })
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.detail || "??????");
           lastResults = data.results || [];
-          flatRows = flattenResults(lastResults);
-          renderLocalPagedTable();
+          let seq = 1;
+          for (const g of lastResults) {
+            if (!g.ok) {
+              localRows.push({ seq: seq++, query: g.query || "", status: "??", error: g.error || "", record: null });
+              continue;
+            }
+            const rs = Array.isArray(g.records) ? g.records : [];
+            if (!rs.length) {
+              localRows.push({ seq: seq++, query: g.query || "", status: "??", error: "", record: {} });
+              continue;
+            }
+            for (const rec of rs) {
+              localRows.push({ seq: seq++, query: g.query || "", status: "??", error: "", record: rec || {} });
+            }
+          }
+          renderLocalPager();
           const okCount = lastResults.filter(x => x.ok).length;
-          statusEl.textContent = `???${okCount}/${lastResults.length} ?????`;
-          statusEl.className = okCount === lastResults.length ? "status ok" : "status bad";
-          csvBtn.disabled = flatRows.length === 0;
+          setStatus("???" + okCount + "/" + lastResults.length + " ?????", okCount !== lastResults.length);
+          csvBtn.disabled = localRows.length === 0;
         }
       } catch (e) {
-        statusEl.textContent = "??: " + e.message;
-        statusEl.className = "status bad";
+        setStatus("??: " + e.message, true);
       } finally {
         runBtn.disabled = false;
       }
     }
-    window.__manualRun = runSearch;
-    window.__manualExport = exportCsv;
-    runBtn.addEventListener("click", runSearch);
 
     async function exportCsv() {
       if (!lastResults.length) return;
       const resp = await fetch("/api/export_csv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ results: lastResults }),
+        body: JSON.stringify({ results: lastResults })
       });
       if (!resp.ok) return;
       const blob = await resp.blob();
@@ -580,6 +527,10 @@ sf-express.com</textarea>
       a.click();
       URL.revokeObjectURL(a.href);
     }
+
+    window.__manualRun = runSearch;
+    window.__manualExport = exportCsv;
+    runBtn.addEventListener("click", runSearch);
     csvBtn.addEventListener("click", exportCsv);
   </script>
 </body>
