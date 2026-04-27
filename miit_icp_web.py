@@ -1,6 +1,7 @@
 import csv
 import io
 import time
+import uuid
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -11,6 +12,8 @@ from miit_icp_auto_query import MiitIcpAutoClient
 
 
 app = FastAPI(title="MIIT ICP Query Web")
+QUERY_SESSION_TTL = 15 * 60
+QUERY_SESSIONS: dict[str, dict[str, Any]] = {}
 
 
 HTML_PAGE = """<!doctype html>
@@ -232,28 +235,35 @@ sf-express.com</textarea>
     let flatRows = [];
     let currentPage = 1;
     const viewPageSize = 10;
+    let remoteSessionId = "";
+    let remoteKeyword = "";
+    let remotePage = 1;
+    let remotePages = 1;
+    let remoteTotal = 0;
+    let remotePageSize = 10;
+    let loadingRemotePage = false;
 
     const labelMap = {
-      domain: "域名",
-      domainId: "域名ID",
-      unitName: "主办单位名称",
-      natureName: "主办单位性质",
-      leaderName: "负责人",
-      mainId: "主体ID",
-      mainLicence: "ICP主体备案号",
-      serviceId: "服务ID",
-      serviceLicence: "服务备案号",
-      serviceName: "访问名称",
-      contentTypeName: "服务名称",
-      accessName: "访问名称",
-      appName: "应用名称",
-      appVersion: "应用版本",
-      appStore: "应用商店",
-      miniProgramName: "小程序名称",
-      miniName: "小程序名称",
-      fastAppName: "快应用名称",
-      limitAccess: "服务前置审批项",
-      updateRecordTime: "审核日期",
+      domain: "??",
+      domainId: "??ID",
+      unitName: "??????",
+      natureName: "??????",
+      leaderName: "???",
+      mainId: "??ID",
+      mainLicence: "ICP?????",
+      serviceId: "??ID",
+      serviceLicence: "?????",
+      serviceName: "????",
+      contentTypeName: "????",
+      accessName: "????",
+      appName: "????",
+      appVersion: "????",
+      appStore: "????",
+      miniProgramName: "?????",
+      miniName: "?????",
+      fastAppName: "?????",
+      limitAccess: "???????",
+      updateRecordTime: "????",
     };
 
     function esc(v) {
@@ -266,7 +276,7 @@ sf-express.com</textarea>
     }
 
     function lines(v) {
-      return v.split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);
+      return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     }
 
     function isEmpty(v) {
@@ -285,16 +295,11 @@ sf-express.com</textarea>
       const service = {};
       const other = {};
 
-      // 核心字段始终展示（即便空），避免“访问名称”等关键项缺失。
       const subjectRequired = ["mainLicence", "updateRecordTime", "unitName", "natureName"];
       const serviceRequired = ["serviceLicence", "serviceName", "contentTypeName", "accessName", "appName", "miniProgramName", "fastAppName", "limitAccess"];
 
-      for (const k of subjectRequired) {
-        subject[k] = src[k] ?? "";
-      }
-      for (const k of serviceRequired) {
-        service[k] = src[k] ?? "";
-      }
+      for (const k of subjectRequired) subject[k] = src[k] ?? "";
+      for (const k of serviceRequired) service[k] = src[k] ?? "";
 
       const subjectKeys = new Set(["mainId", "mainLicence", "unitName", "natureName", "leaderName", "updateRecordTime"]);
       const serviceKeys = new Set([
@@ -332,7 +337,7 @@ sf-express.com</textarea>
     function showDetail(row) {
       detailCard.classList.remove("hidden");
       const rec = row.record || {};
-      detailHint.textContent = `查询词：${row.query}  |  服务备案号：${rec.serviceLicence || "-"}  |  主办单位：${rec.unitName || "-"}`;
+      detailHint.textContent = `????${row.query} | ??????${rec.serviceLicence || "-"} | ?????${rec.unitName || "-"}`;
       const sec = splitSections(rec);
       subjectBlock.classList.toggle("hidden", !renderKVTbody(subjectBody, sec.subject, sec.subjectRequired));
       serviceBlock.classList.toggle("hidden", !renderKVTbody(serviceBody, sec.service, sec.serviceRequired));
@@ -345,34 +350,16 @@ sf-express.com</textarea>
       let seq = 1;
       for (const group of results || []) {
         if (!group.ok) {
-          out.push({
-            seq: seq++,
-            query: group.query || "",
-            status: "失败",
-            error: group.error || "",
-            record: null,
-          });
+          out.push({ seq: seq++, query: group.query || "", status: "??", error: group.error || "", record: null });
           continue;
         }
         const records = group.records || [];
         if (!records.length) {
-          out.push({
-            seq: seq++,
-            query: group.query || "",
-            status: "成功(0条)",
-            error: "",
-            record: {},
-          });
+          out.push({ seq: seq++, query: group.query || "", status: "??(0?)", error: "", record: {} });
           continue;
         }
         for (const rec of records) {
-          out.push({
-            seq: seq++,
-            query: group.query || "",
-            status: "成功",
-            error: "",
-            record: rec || {},
-          });
+          out.push({ seq: seq++, query: group.query || "", status: "??", error: "", record: rec || {} });
         }
       }
       return out;
@@ -382,13 +369,8 @@ sf-express.com</textarea>
       resultBody.innerHTML = "";
       rows.forEach((row, idx) => {
         const rec = row.record || {};
+        const isFailed = row.status === "??";
         const tr = document.createElement("tr");
-        const isFailed = row.status === "失败";
-        const statusCls = isFailed ? "bad" : "ok";
-        let opHtml = "-";
-        if (!isFailed && rec && Object.keys(rec).length > 0) {
-          opHtml = `<button class="op-btn" data-idx="${idx}">详情</button>`;
-        }
         tr.innerHTML = `
           <td>${row.seq}</td>
           <td>${esc(row.query)}</td>
@@ -396,21 +378,17 @@ sf-express.com</textarea>
           <td>${esc(rec.natureName || "")}</td>
           <td>${esc(rec.serviceLicence || "")}</td>
           <td>${esc(rec.updateRecordTime || "")}</td>
-          <td class="${statusCls}">${esc(isFailed ? row.error : row.status)}</td>
-          <td>${opHtml}</td>
+          <td class="${isFailed ? "bad" : "ok"}">${esc(isFailed ? row.error : row.status)}</td>
+          <td>${(!isFailed && rec && Object.keys(rec).length > 0) ? `<button class="op-btn" data-idx="${idx}">??</button>` : "-"}</td>
         `;
         resultBody.appendChild(tr);
       });
-
       resultBody.querySelectorAll("button[data-idx]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const i = Number(btn.getAttribute("data-idx"));
-          showDetail(rows[i]);
-        });
+        btn.addEventListener("click", () => showDetail(rows[Number(btn.getAttribute("data-idx"))]));
       });
     }
 
-    function renderPagedTable() {
+    function renderLocalPagedTable() {
       const total = flatRows.length;
       if (!total) {
         pagerEl.classList.add("hidden");
@@ -418,45 +396,98 @@ sf-express.com</textarea>
         resultBody.innerHTML = "";
         return;
       }
-
       const pages = Math.max(1, Math.ceil(total / viewPageSize));
       currentPage = Math.min(Math.max(1, currentPage), pages);
       const start = (currentPage - 1) * viewPageSize;
       const end = start + viewPageSize;
-      const pageRows = flatRows.slice(start, end);
-      renderResultTable(pageRows);
-
+      renderResultTable(flatRows.slice(start, end));
       pagerEl.classList.remove("hidden");
       pagerEl.innerHTML = `
-        <button id="pgPrev" ${currentPage <= 1 ? "disabled" : ""}>上一页</button>
-        <span>第 ${currentPage} / ${pages} 页，共 ${total} 条</span>
-        <button id="pgNext" ${currentPage >= pages ? "disabled" : ""}>下一页</button>
+        <button id="pgPrev" ${currentPage <= 1 ? "disabled" : ""}>???</button>
+        <span>? ${currentPage}/${pages} ??? ${total} ?</span>
+        <button id="pgNext" ${currentPage >= pages ? "disabled" : ""}>???</button>
       `;
       document.getElementById("pgPrev")?.addEventListener("click", () => {
         if (currentPage > 1) {
           currentPage -= 1;
-          renderPagedTable();
+          renderLocalPagedTable();
         }
       });
       document.getElementById("pgNext")?.addEventListener("click", () => {
         if (currentPage < pages) {
           currentPage += 1;
-          renderPagedTable();
+          renderLocalPagedTable();
         }
       });
+    }
+
+    function mapRemoteRows(query, records, pageNum, pageSize) {
+      const start = (Math.max(1, pageNum) - 1) * Math.max(1, pageSize) + 1;
+      return (records || []).map((rec, idx) => ({
+        seq: start + idx,
+        query,
+        status: "??",
+        error: "",
+        record: rec || {},
+      }));
+    }
+
+    function renderRemotePager() {
+      pagerEl.classList.remove("hidden");
+      pagerEl.innerHTML = `
+        <button id="pgPrev" ${remotePage <= 1 || loadingRemotePage ? "disabled" : ""}>???</button>
+        <span>? ${remotePage}/${remotePages} ??? ${remoteTotal} ?</span>
+        <button id="pgNext" ${remotePage >= remotePages || loadingRemotePage ? "disabled" : ""}>???</button>
+      `;
+      document.getElementById("pgPrev")?.addEventListener("click", async () => {
+        if (remotePage > 1) await loadRemotePage(remotePage - 1);
+      });
+      document.getElementById("pgNext")?.addEventListener("click", async () => {
+        if (remotePage < remotePages) await loadRemotePage(remotePage + 1);
+      });
+    }
+
+    async function loadRemotePage(pageNum) {
+      if (!remoteSessionId || loadingRemotePage) return;
+      loadingRemotePage = true;
+      statusEl.textContent = `????? ${pageNum} ?...`;
+      statusEl.className = "status";
+      renderRemotePager();
+      try {
+        const resp = await fetch("/api/query_page", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: remoteSessionId, page_num: pageNum }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || "??????");
+        remotePage = Number(data.pageNum || pageNum || 1);
+        remotePages = Math.max(1, Number(data.pages || 1));
+        remoteTotal = Math.max(0, Number(data.total || 0));
+        const rows = mapRemoteRows(remoteKeyword, data.records || [], remotePage, Number(data.pageSize || remotePageSize || 10));
+        renderResultTable(rows);
+        statusEl.textContent = `???? ${remotePage}/${remotePages} ??? ${remoteTotal} ?`;
+        statusEl.className = "status ok";
+      } catch (e) {
+        statusEl.textContent = "????: " + e.message;
+        statusEl.className = "status bad";
+      } finally {
+        loadingRemotePage = false;
+        renderRemotePager();
+      }
     }
 
     runBtn.onclick = async () => {
       const keywords = lines(document.getElementById("keywords").value);
       if (!keywords.length) {
-        statusEl.textContent = "请先输入查询词。";
+        statusEl.textContent = "????????";
         statusEl.className = "status bad";
         return;
       }
 
       runBtn.disabled = true;
       csvBtn.disabled = true;
-      statusEl.textContent = "查询中...";
+      statusEl.textContent = "???...";
       statusEl.className = "status";
       resultBody.innerHTML = "";
       pagerEl.classList.add("hidden");
@@ -465,34 +496,66 @@ sf-express.com</textarea>
       lastResults = [];
       flatRows = [];
       currentPage = 1;
+      remoteSessionId = "";
+      remoteKeyword = "";
+      remotePage = 1;
+      remotePages = 1;
+      remoteTotal = 0;
+      remotePageSize = viewPageSize;
 
-      const payload = {
-        keywords,
+      const commonPayload = {
         service_type: Number(document.getElementById("serviceType").value),
         retries: Number(document.getElementById("retries").value),
         transport: document.getElementById("transport").value,
-        delay_sec: Number(document.getElementById("delaySec").value),
       };
 
       try {
-        const resp = await fetch("/api/batch_query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.detail || "请求失败");
+        if (keywords.length === 1) {
+          const startResp = await fetch("/api/start_query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              keyword: keywords[0],
+              ...commonPayload,
+              page_size: viewPageSize,
+            }),
+          });
+          const startData = await startResp.json();
+          if (!startResp.ok) throw new Error(startData.detail || "????");
 
-        lastResults = data.results || [];
-        flatRows = flattenResults(lastResults);
-        renderPagedTable();
-
-        const okCount = lastResults.filter(x => x.ok).length;
-        statusEl.textContent = `完成：${okCount}/${lastResults.length} 查询成功`;
-        statusEl.className = okCount === lastResults.length ? "status ok" : "status bad";
-        csvBtn.disabled = flatRows.length === 0;
+          remoteSessionId = startData.session_id || "";
+          remoteKeyword = keywords[0];
+          remotePage = Number(startData.pageNum || 1);
+          remotePages = Math.max(1, Number(startData.pages || 1));
+          remoteTotal = Math.max(0, Number(startData.total || 0));
+          remotePageSize = Math.max(1, Number(startData.pageSize || viewPageSize));
+          const rows = mapRemoteRows(remoteKeyword, startData.records || [], remotePage, remotePageSize);
+          renderResultTable(rows);
+          renderRemotePager();
+          statusEl.textContent = `???? ${remotePage}/${remotePages} ??? ${remoteTotal} ??????????`;
+          statusEl.className = "status ok";
+        } else {
+          const resp = await fetch("/api/batch_query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              keywords,
+              ...commonPayload,
+              delay_sec: Number(document.getElementById("delaySec").value),
+            }),
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.detail || "????");
+          lastResults = data.results || [];
+          flatRows = flattenResults(lastResults);
+          renderLocalPagedTable();
+          const okCount = lastResults.filter(x => x.ok).length;
+          statusEl.textContent = `???${okCount}/${lastResults.length} ?????`;
+          statusEl.className = okCount === lastResults.length ? "status ok" : "status bad";
+          csvBtn.disabled = flatRows.length === 0;
+        }
       } catch (e) {
-        statusEl.textContent = "失败: " + e.message;
+        statusEl.textContent = "??: " + e.message;
         statusEl.className = "status bad";
       } finally {
         runBtn.disabled = false;
@@ -534,6 +597,19 @@ class ExportRequest(BaseModel):
     results: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class StartQueryRequest(BaseModel):
+    keyword: str
+    service_type: int = 1
+    retries: int = 8
+    transport: str = "curl"
+    page_size: int = 10
+
+
+class QueryPageRequest(BaseModel):
+    session_id: str
+    page_num: int = 1
+
+
 def _is_domain(text: str) -> bool:
     t = text.strip().lower()
     return "." in t and " " not in t
@@ -558,6 +634,89 @@ def _merge_detail_into_record(record: dict[str, Any], detail_resp: dict[str, Any
                 if isinstance(v, (str, int, float, bool)) and v not in ("", None):
                     merged[k] = v
     return merged
+
+
+def _cleanup_query_sessions() -> None:
+    now = time.time()
+    expired = [
+        sid
+        for sid, sess in QUERY_SESSIONS.items()
+        if now - float(sess.get("updated_at", 0)) > QUERY_SESSION_TTL
+    ]
+    for sid in expired:
+        QUERY_SESSIONS.pop(sid, None)
+
+
+def _get_query_session(session_id: str) -> dict[str, Any]:
+    _cleanup_query_sessions()
+    sess = QUERY_SESSIONS.get(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="查询会话不存在或已过期，请重新搜索")
+    sess["updated_at"] = time.time()
+    return sess
+
+
+def _enrich_app_records(
+    client: MiitIcpAutoClient,
+    records: list[Any],
+    service_type: int,
+) -> list[Any]:
+    if service_type not in (6, 7, 8):
+        return records
+    enriched: list[Any] = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            enriched.append(rec)
+            continue
+        data_id = rec.get("dataId") or rec.get("serviceId") or rec.get("id")
+        if not data_id:
+            enriched.append(rec)
+            continue
+        try:
+            detail = client.query_detail_by_app_and_mini_id(data_id, service_type=service_type)
+            enriched.append(_merge_detail_into_record(rec, detail))
+        except Exception:
+            enriched.append(rec)
+    return enriched
+
+
+def _fetch_page_with_session(
+    sess: dict[str, Any],
+    page_num: int,
+) -> dict[str, Any]:
+    client = sess["client"]
+    keyword = sess["keyword"]
+    service_type = int(sess["service_type"])
+    page_size = int(sess["page_size"])
+
+    raw = client.query_company(
+        keyword,
+        service_type=service_type,
+        page_num=max(1, page_num),
+        page_size=max(1, page_size),
+    )
+    params = raw.get("params") or {}
+    records = params.get("list") or []
+    if not isinstance(records, list):
+        records = []
+    records = _enrich_app_records(client, records, service_type)
+
+    all_keys: set[str] = set()
+    for rec in records:
+        if isinstance(rec, dict):
+            all_keys.update(rec.keys())
+
+    return {
+        "query": keyword,
+        "query_type": "域名" if _is_domain(keyword) else "主体",
+        "ok": True,
+        "record_columns": sorted(all_keys),
+        "records": records,
+        "pageNum": int(params.get("pageNum") or page_num or 1),
+        "pageSize": int(params.get("pageSize") or page_size),
+        "pages": int(params.get("pages") or 1),
+        "total": int(params.get("total") or len(records)),
+    }
 
 
 def _query_with_client(
@@ -629,6 +788,54 @@ def _query_with_client(
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     return HTML_PAGE
+
+
+@app.post("/api/start_query")
+def start_query(req: StartQueryRequest) -> dict[str, Any]:
+    keyword = (req.keyword or "").strip()
+    if not keyword:
+        raise HTTPException(status_code=400, detail="keyword 不能为空")
+    if req.transport not in ("curl", "requests"):
+        raise HTTPException(status_code=400, detail="transport 仅支持 curl/requests")
+    if req.page_size <= 0 or req.page_size > 200:
+        raise HTTPException(status_code=400, detail="page_size 需在 1~200 之间")
+
+    client = MiitIcpAutoClient(transport=req.transport)
+    try:
+        client.auth()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"鉴权失败: {exc}")
+
+    last_err: Exception | None = None
+    for _ in range(max(1, req.retries)):
+        try:
+            image_payload = client.get_check_images()
+            client.verify_slider(image_payload)
+            break
+        except Exception as exc:
+            last_err = exc
+            time.sleep(0.3)
+    else:
+        raise HTTPException(status_code=500, detail=f"验证码失败: {last_err}")
+
+    session_id = uuid.uuid4().hex
+    sess = {
+        "client": client,
+        "keyword": keyword,
+        "service_type": req.service_type,
+        "page_size": req.page_size,
+        "updated_at": time.time(),
+    }
+    QUERY_SESSIONS[session_id] = sess
+    page_data = _fetch_page_with_session(sess, page_num=1)
+    return {"success": True, "session_id": session_id, **page_data}
+
+
+@app.post("/api/query_page")
+def query_page(req: QueryPageRequest) -> dict[str, Any]:
+    sess = _get_query_session(req.session_id)
+    page_data = _fetch_page_with_session(sess, page_num=max(1, req.page_num))
+    return {"success": True, "session_id": req.session_id, **page_data}
 
 
 @app.post("/api/batch_query")
