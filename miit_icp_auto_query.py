@@ -209,12 +209,9 @@ class MiitIcpAutoClient:
         if not self.uuid or not self.sign:
             raise RuntimeError("uuid/sign missing, verify slider first")
         headers = {"uuid": self.uuid, "sign": self.sign}
-        body = {
-            "pageNum": "" if page_num in (None, "") else str(page_num),
-            "pageSize": "" if page_size in (None, "") else str(page_size),
-            "unitName": company,
-            "serviceType": service_type,
-        }
+        body: dict[str, Any] = {"unitName": company, "serviceType": service_type}
+        body["pageNum"] = "" if page_num in (None, "") else int(page_num)
+        body["pageSize"] = "" if page_size in (None, "") else int(page_size)
         resp = self.session.post(
             BASE_URL + "icpAbbreviateInfo/queryByCondition",
             json=body,
@@ -267,15 +264,40 @@ class MiitIcpAutoClient:
         pages = max(1, self._to_int(first_params.get("pages"), 1))
         current_page = max(1, self._to_int(first_params.get("pageNum"), 1))
         limit_pages = max(1, max_pages)
-        if pages > limit_pages:
-            pages = limit_pages
+        target_pages = pages
+        if target_pages > limit_pages:
+            target_pages = limit_pages
 
-        for p in range(current_page + 1, pages + 1):
+        # 先按接口给出的 pages 翻页；若不可靠，再用 total/空页兜底。
+        p = current_page + 1
+        while p <= target_pages:
             page_data = self.query_company(company, service_type, page_num=p, page_size=page_size)
             page_params = page_data.get("params") or {}
             page_list = page_params.get("list") or []
+            before = len(all_records)
             if isinstance(page_list, list):
                 all_records.extend(page_list)
+            after = len(all_records)
+            if after >= total:
+                p += 1
+                break
+            if not page_list or after == before:
+                p += 1
+                break
+            p += 1
+
+        # fallback: 某些场景 pages/nextPage 异常，按 total 继续探测后续页。
+        while len(all_records) < total and p <= limit_pages:
+            page_data = self.query_company(company, service_type, page_num=p, page_size=page_size)
+            page_params = page_data.get("params") or {}
+            page_list = page_params.get("list") or []
+            before = len(all_records)
+            if isinstance(page_list, list):
+                all_records.extend(page_list)
+            after = len(all_records)
+            if not page_list or after == before:
+                break
+            p += 1
 
         merged = dict(first)
         merged_params = dict(first_params)
@@ -284,7 +306,7 @@ class MiitIcpAutoClient:
         merged_params["total"] = total
         merged_params["pageNum"] = 1
         merged_params["pageSize"] = page_size
-        merged_params["pages"] = pages
+        merged_params["pages"] = max(1, (len(all_records) + max(1, page_size) - 1) // max(1, page_size))
         merged_params["startRow"] = 0
         merged_params["endRow"] = len(all_records)
         merged_params["hasNextPage"] = False

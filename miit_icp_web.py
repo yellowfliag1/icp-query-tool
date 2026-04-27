@@ -112,6 +112,16 @@ HTML_PAGE = """<!doctype html>
     .kv th, .kv td { border: 1px solid var(--line); padding: 8px; }
     .kv th { width: 220px; background: var(--head); font-weight: 600; color: #374151; }
     .hidden { display: none; }
+    .pager { margin-top: 10px; display: flex; gap: 8px; align-items: center; }
+    .pager button {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 4px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    .pager button:disabled { opacity: .5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -179,6 +189,7 @@ sf-express.com</textarea>
           </thead>
           <tbody id="resultBody"></tbody>
         </table>
+        <div id="pager" class="pager hidden"></div>
       </div>
     </div>
 
@@ -207,6 +218,7 @@ sf-express.com</textarea>
     const csvBtn = document.getElementById("csvBtn");
     const statusEl = document.getElementById("status");
     const resultBody = document.getElementById("resultBody");
+    const pagerEl = document.getElementById("pager");
     const detailCard = document.getElementById("detailCard");
     const detailHint = document.getElementById("detailHint");
     const subjectBlock = document.getElementById("subjectBlock");
@@ -218,6 +230,8 @@ sf-express.com</textarea>
 
     let lastResults = [];
     let flatRows = [];
+    let currentPage = 1;
+    const viewPageSize = 10;
 
     const labelMap = {
       domain: "域名",
@@ -396,6 +410,42 @@ sf-express.com</textarea>
       });
     }
 
+    function renderPagedTable() {
+      const total = flatRows.length;
+      if (!total) {
+        pagerEl.classList.add("hidden");
+        pagerEl.innerHTML = "";
+        resultBody.innerHTML = "";
+        return;
+      }
+
+      const pages = Math.max(1, Math.ceil(total / viewPageSize));
+      currentPage = Math.min(Math.max(1, currentPage), pages);
+      const start = (currentPage - 1) * viewPageSize;
+      const end = start + viewPageSize;
+      const pageRows = flatRows.slice(start, end);
+      renderResultTable(pageRows);
+
+      pagerEl.classList.remove("hidden");
+      pagerEl.innerHTML = `
+        <button id="pgPrev" ${currentPage <= 1 ? "disabled" : ""}>上一页</button>
+        <span>第 ${currentPage} / ${pages} 页，共 ${total} 条</span>
+        <button id="pgNext" ${currentPage >= pages ? "disabled" : ""}>下一页</button>
+      `;
+      document.getElementById("pgPrev")?.addEventListener("click", () => {
+        if (currentPage > 1) {
+          currentPage -= 1;
+          renderPagedTable();
+        }
+      });
+      document.getElementById("pgNext")?.addEventListener("click", () => {
+        if (currentPage < pages) {
+          currentPage += 1;
+          renderPagedTable();
+        }
+      });
+    }
+
     runBtn.onclick = async () => {
       const keywords = lines(document.getElementById("keywords").value);
       if (!keywords.length) {
@@ -409,9 +459,12 @@ sf-express.com</textarea>
       statusEl.textContent = "查询中...";
       statusEl.className = "status";
       resultBody.innerHTML = "";
+      pagerEl.classList.add("hidden");
+      pagerEl.innerHTML = "";
       detailCard.classList.add("hidden");
       lastResults = [];
       flatRows = [];
+      currentPage = 1;
 
       const payload = {
         keywords,
@@ -432,7 +485,7 @@ sf-express.com</textarea>
 
         lastResults = data.results || [];
         flatRows = flattenResults(lastResults);
-        renderResultTable(flatRows);
+        renderPagedTable();
 
         const okCount = lastResults.filter(x => x.ok).length;
         statusEl.textContent = `完成：${okCount}/${lastResults.length} 查询成功`;
