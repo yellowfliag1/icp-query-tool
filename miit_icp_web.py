@@ -245,21 +245,21 @@ sf-express.com</textarea>
     let loading = false;
 
     const labelMap = {
-      domain: "??",
-      domainId: "??ID",
-      unitName: "??????",
-      natureName: "??????",
-      leaderName: "???",
-      mainLicence: "ICP?????",
-      serviceLicence: "?????",
-      serviceName: "????",
-      contentTypeName: "????",
-      accessName: "????",
-      appName: "????",
-      miniProgramName: "?????",
-      fastAppName: "?????",
-      limitAccess: "???????",
-      updateRecordTime: "????",
+      domain: "Domain",
+      domainId: "Domain ID",
+      unitName: "Host Unit",
+      natureName: "Entity Type",
+      leaderName: "Owner",
+      mainLicence: "ICP Main License",
+      serviceLicence: "Service License",
+      serviceName: "Access Name",
+      contentTypeName: "Service Name",
+      accessName: "Access Name",
+      appName: "App Name",
+      miniProgramName: "Mini Program",
+      fastAppName: "Quick App",
+      limitAccess: "Pre-approval",
+      updateRecordTime: "Review Time",
     };
 
     function esc(v) {
@@ -305,7 +305,7 @@ sf-express.com</textarea>
 
     function showDetail(row) {
       const rec = row.record || {};
-      detailHint.textContent = "????" + row.query + " | ??????" + (rec.serviceLicence || "-") + " | ?????" + (rec.unitName || "-");
+      detailHint.textContent = "Query: " + row.query + " | Service License: " + (rec.serviceLicence || "-") + " | Unit: " + (rec.unitName || "-");
       const subject = {
         mainLicence: rec.mainLicence || "",
         updateRecordTime: rec.updateRecordTime || "",
@@ -339,7 +339,7 @@ sf-express.com</textarea>
       resultBody.innerHTML = "";
       rows.forEach((row, i) => {
         const rec = row.record || {};
-        const failed = row.status === "??";
+        const failed = row.status === "Failed";
         const tr = document.createElement("tr");
         tr.innerHTML = "<td>" + row.seq + "</td>" +
           "<td>" + esc(row.query) + "</td>" +
@@ -347,8 +347,8 @@ sf-express.com</textarea>
           "<td>" + esc(rec.natureName || "") + "</td>" +
           "<td>" + esc(rec.serviceLicence || "") + "</td>" +
           "<td>" + esc(rec.updateRecordTime || "") + "</td>" +
-          "<td class='" + (failed ? "bad" : "ok") + "'>" + esc(failed ? (row.error || "??") : "??") + "</td>" +
-          "<td>" + ((!failed && rec && Object.keys(rec).length > 0) ? ("<button type='button' class='op-btn' data-i='" + i + "'>??</button>") : "-") + "</td>";
+          "<td class='" + (failed ? "bad" : "ok") + "'>" + esc(failed ? (row.error || "Failed") : "Success") + "</td>" +
+          "<td>" + ((!failed && rec && Object.keys(rec).length > 0) ? ("<button type='button' class='op-btn' data-i='" + i + "'>Detail</button>") : "-") + "</td>";
         resultBody.appendChild(tr);
       });
       resultBody.querySelectorAll("button[data-i]").forEach(btn => {
@@ -375,9 +375,9 @@ sf-express.com</textarea>
       renderRows(rows);
 
       pagerEl.classList.remove("hidden");
-      pagerEl.innerHTML = "<button type='button' id='pgPrev' " + (localPage <= 1 ? "disabled" : "") + ">???</button>" +
-                         "<span>? " + localPage + "/" + pages + " ??? " + total + " ?</span>" +
-                         "<button type='button' id='pgNext' " + (localPage >= pages ? "disabled" : "") + ">???</button>";
+      pagerEl.innerHTML = "<button type='button' id='pgPrev' " + (localPage <= 1 ? "disabled" : "") + ">Prev</button>" +
+                         "<span>Page " + localPage + "/" + pages + ", total " + total + "</span>" +
+                         "<button type='button' id='pgNext' " + (localPage >= pages ? "disabled" : "") + ">Prev</button>";
       document.getElementById("pgPrev").onclick = function() { localPage -= 1; renderLocalPager(); };
       document.getElementById("pgNext").onclick = function() { localPage += 1; renderLocalPager(); };
     }
@@ -387,7 +387,7 @@ sf-express.com</textarea>
       return (records || []).map((rec, idx) => ({
         seq: base + idx + 1,
         query: remoteKeyword,
-        status: "??",
+        status: "Success",
         error: "",
         record: rec || {},
       }));
@@ -395,9 +395,9 @@ sf-express.com</textarea>
 
     function renderRemotePager() {
       pagerEl.classList.remove("hidden");
-      pagerEl.innerHTML = "<button type='button' id='pgPrev' " + ((remotePage <= 1 || loading) ? "disabled" : "") + ">???</button>" +
-                         "<span>? " + remotePage + "/" + remotePages + " ??? " + remoteTotal + " ?</span>" +
-                         "<button type='button' id='pgNext' " + ((remotePage >= remotePages || loading) ? "disabled" : "") + ">???</button>";
+      pagerEl.innerHTML = "<button type='button' id='pgPrev' " + ((remotePage <= 1 || loading) ? "disabled" : "") + ">Next</button>" +
+                         "<span>Page " + remotePage + "/" + remotePages + ", total " + remoteTotal + "</span>" +
+                         "<button type='button' id='pgNext' " + ((remotePage >= remotePages || loading) ? "disabled" : "") + ">Next</button>";
       document.getElementById("pgPrev").onclick = async function() { if (remotePage > 1) await loadRemotePage(remotePage - 1); };
       document.getElementById("pgNext").onclick = async function() { if (remotePage < remotePages) await loadRemotePage(remotePage + 1); };
     }
@@ -405,7 +405,7 @@ sf-express.com</textarea>
     async function loadRemotePage(pageNum) {
       if (!remoteSessionId || loading) return;
       loading = true;
-      setStatus("????? " + pageNum + " ?...", false);
+      setStatus("Loading page " + pageNum + "...", false);
       renderRemotePager();
       try {
         const resp = await fetch("/api/query_page", {
@@ -414,15 +414,15 @@ sf-express.com</textarea>
           body: JSON.stringify({ session_id: remoteSessionId, page_num: pageNum })
         });
         const data = await resp.json();
-        if (!resp.ok) throw new Error(data.detail || "????");
+        if (!resp.ok) throw new Error(data.detail || "Query failed");
         remotePage = Number(data.pageNum || pageNum || 1);
         remotePages = Math.max(1, Number(data.pages || 1));
         remoteTotal = Math.max(0, Number(data.total || 0));
         const rows = mapRemote(data.records || [], remotePage, Number(data.pageSize || remotePageSize || 10));
         renderRows(rows);
-        setStatus("???? " + remotePage + "/" + remotePages + " ??? " + remoteTotal + " ?", false);
+        setStatus("Loaded page " + remotePage + "/" + remotePages + ", total " + remoteTotal, false);
       } catch (e) {
-        setStatus("????: " + e.message, true);
+        setStatus("Page load failed: " + e.message, true);
       } finally {
         loading = false;
         renderRemotePager();
@@ -432,13 +432,13 @@ sf-express.com</textarea>
     async function runSearch() {
       const keywords = splitLines(document.getElementById("keywords").value);
       if (!keywords.length) {
-        setStatus("???????", true);
+        setStatus("Please input keyword", true);
         return;
       }
 
       runBtn.disabled = true;
       csvBtn.disabled = true;
-      setStatus("???...", false);
+      setStatus("Searching...", false);
       resultBody.innerHTML = "";
       pagerEl.classList.add("hidden");
       pagerEl.innerHTML = "";
@@ -468,7 +468,7 @@ sf-express.com</textarea>
             body: JSON.stringify({ keyword: keywords[0], page_size: localPageSize, ...commonPayload })
           });
           const data = await resp.json();
-          if (!resp.ok) throw new Error(data.detail || "????");
+          if (!resp.ok) throw new Error(data.detail || "Query failed");
 
           remoteSessionId = data.session_id || "";
           remoteKeyword = keywords[0];
@@ -478,7 +478,7 @@ sf-express.com</textarea>
           remotePageSize = Math.max(1, Number(data.pageSize || localPageSize));
           renderRows(mapRemote(data.records || [], remotePage, remotePageSize));
           renderRemotePager();
-          setStatus("???? " + remotePage + "/" + remotePages + " ??? " + remoteTotal + " ?????????", false);
+          setStatus("Loaded page " + remotePage + "/" + remotePages + ", total " + remoteTotal + " (lazy paging)", false);
         } else {
           const delaySec = Number(document.getElementById("delaySec").value);
           const resp = await fetch("/api/batch_query", {
@@ -487,30 +487,30 @@ sf-express.com</textarea>
             body: JSON.stringify({ keywords, delay_sec: delaySec, ...commonPayload })
           });
           const data = await resp.json();
-          if (!resp.ok) throw new Error(data.detail || "??????");
+          if (!resp.ok) throw new Error(data.detail || "Batch query failed");
           lastResults = data.results || [];
           let seq = 1;
           for (const g of lastResults) {
             if (!g.ok) {
-              localRows.push({ seq: seq++, query: g.query || "", status: "??", error: g.error || "", record: null });
+              localRows.push({ seq: seq++, query: g.query || "", status: "Success", error: g.error || "", record: null });
               continue;
             }
             const rs = Array.isArray(g.records) ? g.records : [];
             if (!rs.length) {
-              localRows.push({ seq: seq++, query: g.query || "", status: "??", error: "", record: {} });
+              localRows.push({ seq: seq++, query: g.query || "", status: "Success", error: "", record: {} });
               continue;
             }
             for (const rec of rs) {
-              localRows.push({ seq: seq++, query: g.query || "", status: "??", error: "", record: rec || {} });
+              localRows.push({ seq: seq++, query: g.query || "", status: "Success", error: "", record: rec || {} });
             }
           }
           renderLocalPager();
           const okCount = lastResults.filter(x => x.ok).length;
-          setStatus("???" + okCount + "/" + lastResults.length + " ?????", okCount !== lastResults.length);
+          setStatus("Done: " + okCount + "/" + lastResults.length + " succeeded", okCount !== lastResults.length);
           csvBtn.disabled = localRows.length === 0;
         }
       } catch (e) {
-        setStatus("??: " + e.message, true);
+        setStatus("Failed: " + e.message, true);
       } finally {
         runBtn.disabled = false;
       }
