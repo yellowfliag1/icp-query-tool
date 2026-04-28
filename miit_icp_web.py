@@ -272,7 +272,11 @@ sf-express.com</textarea>
     }
 
     function splitLines(v) {
-      return String(v || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      return String(v || "")
+        .replaceAll(String.fromCharCode(13), "")
+        .split(String.fromCharCode(10))
+        .map(s => s.trim())
+        .filter(Boolean);
     }
 
     function isEmpty(v) {
@@ -532,6 +536,153 @@ sf-express.com</textarea>
     window.__manualExport = exportCsv;
     runBtn.addEventListener("click", runSearch);
     csvBtn.addEventListener("click", exportCsv);
+  </script>
+  <script>
+    (function () {
+      if (typeof window.__manualRun === "function") return;
+
+      const runBtn = document.getElementById("runBtn");
+      const statusEl = document.getElementById("status");
+      const resultBody = document.getElementById("resultBody");
+      const pagerEl = document.getElementById("pager");
+      const keywordsEl = document.getElementById("keywords");
+      const serviceTypeEl = document.getElementById("serviceType");
+      const retriesEl = document.getElementById("retries");
+      const transportEl = document.getElementById("transport");
+
+      if (!runBtn || !statusEl || !resultBody || !pagerEl || !keywordsEl) return;
+
+      let sid = "";
+      let page = 1;
+      let pages = 1;
+      let total = 0;
+      let psize = 10;
+      let keyword = "";
+      let busy = false;
+
+      function setStatus(t, bad) {
+        statusEl.textContent = t;
+        statusEl.className = bad ? "status bad" : "status ok";
+      }
+
+      function esc(v) {
+        return String(v == null ? "" : v)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function renderRows(records, pageNum, pageSize) {
+        resultBody.innerHTML = "";
+        const base = (Math.max(1, pageNum) - 1) * Math.max(1, pageSize);
+        (records || []).forEach((rec, idx) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML =
+            "<td>" + (base + idx + 1) + "</td>" +
+            "<td>" + esc(keyword) + "</td>" +
+            "<td>" + esc((rec || {}).unitName || "") + "</td>" +
+            "<td>" + esc((rec || {}).natureName || "") + "</td>" +
+            "<td>" + esc((rec || {}).serviceLicence || "") + "</td>" +
+            "<td>" + esc((rec || {}).updateRecordTime || "") + "</td>" +
+            "<td class='ok'>成功</td>" +
+            "<td>-</td>";
+          resultBody.appendChild(tr);
+        });
+      }
+
+      function renderPager() {
+        pagerEl.classList.remove("hidden");
+        pagerEl.innerHTML =
+          "<button type='button' id='fbPrev' " + ((page <= 1 || busy) ? "disabled" : "") + ">上一页</button>" +
+          "<span>第 " + page + "/" + pages + " 页，共 " + total + " 条</span>" +
+          "<button type='button' id='fbNext' " + ((page >= pages || busy) ? "disabled" : "") + ">下一页</button>";
+        const prev = document.getElementById("fbPrev");
+        const next = document.getElementById("fbNext");
+        if (prev) prev.onclick = function () { if (page > 1) loadPage(page - 1); };
+        if (next) next.onclick = function () { if (page < pages) loadPage(page + 1); };
+      }
+
+      async function loadPage(pn) {
+        if (!sid || busy) return;
+        busy = true;
+        setStatus("正在加载第 " + pn + " 页...", false);
+        renderPager();
+        try {
+          const resp = await fetch("/api/query_page", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: sid, page_num: pn }),
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.detail || "翻页失败");
+          page = Number(data.pageNum || pn || 1);
+          pages = Math.max(1, Number(data.pages || 1));
+          total = Math.max(0, Number(data.total || 0));
+          psize = Math.max(1, Number(data.pageSize || psize || 10));
+          renderRows(data.records || [], page, psize);
+          setStatus("已加载第 " + page + "/" + pages + " 页，共 " + total + " 条", false);
+        } catch (e) {
+          setStatus("翻页失败: " + e.message, true);
+        } finally {
+          busy = false;
+          renderPager();
+        }
+      }
+
+      async function runSearchFallback() {
+        if (busy) return;
+        const words = String(keywordsEl.value || "")
+          .replaceAll(String.fromCharCode(13), "")
+          .split(String.fromCharCode(10))
+          .map(s => s.trim())
+          .filter(Boolean);
+        if (!words.length) {
+          setStatus("请先输入查询词", true);
+          return;
+        }
+        keyword = words[0];
+        page = 1;
+        pages = 1;
+        total = 0;
+        resultBody.innerHTML = "";
+        pagerEl.classList.add("hidden");
+        pagerEl.innerHTML = "";
+        busy = true;
+        setStatus("查询中...", false);
+        try {
+          const resp = await fetch("/api/start_query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              keyword: keyword,
+              service_type: Number((serviceTypeEl || {}).value || 1),
+              retries: Number((retriesEl || {}).value || 8),
+              transport: (transportEl || {}).value || "curl",
+              page_size: 10
+            }),
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.detail || "查询失败");
+          sid = data.session_id || "";
+          page = Number(data.pageNum || 1);
+          pages = Math.max(1, Number(data.pages || 1));
+          total = Math.max(0, Number(data.total || 0));
+          psize = Math.max(1, Number(data.pageSize || 10));
+          renderRows(data.records || [], page, psize);
+          renderPager();
+          setStatus("已加载第 " + page + "/" + pages + " 页，共 " + total + " 条", false);
+        } catch (e) {
+          setStatus("查询失败: " + e.message, true);
+        } finally {
+          busy = false;
+          renderPager();
+        }
+      }
+
+      window.__manualRun = runSearchFallback;
+      runBtn.onclick = runSearchFallback;
+    })();
   </script>
 </body>
 </html>
