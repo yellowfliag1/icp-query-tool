@@ -243,6 +243,7 @@ sf-express.com</textarea>
     let remoteTotal = 0;
     let remotePageSize = 10;
     let loading = false;
+    let remotePageRecords = {};
 
     const labelMap = {
       domain: "Domain",
@@ -395,11 +396,32 @@ sf-express.com</textarea>
 
     function renderRemotePager() {
       pagerEl.classList.remove("hidden");
-      pagerEl.innerHTML = "<button type='button' id='pgPrev' " + ((remotePage <= 1 || loading) ? "disabled" : "") + ">Next</button>" +
+      pagerEl.innerHTML = "<button type='button' id='pgPrev' " + ((remotePage <= 1 || loading) ? "disabled" : "") + ">Prev</button>" +
                          "<span>Page " + remotePage + "/" + remotePages + ", total " + remoteTotal + "</span>" +
-                         "<button type='button' id='pgNext' " + ((remotePage >= remotePages || loading) ? "disabled" : "") + ">Next</button>";
+                          "<button type='button' id='pgNext' " + ((remotePage >= remotePages || loading) ? "disabled" : "") + ">Next</button>";
       document.getElementById("pgPrev").onclick = async function() { if (remotePage > 1) await loadRemotePage(remotePage - 1); };
       document.getElementById("pgNext").onclick = async function() { if (remotePage < remotePages) await loadRemotePage(remotePage + 1); };
+    }
+
+    function refreshRemoteExportRows() {
+      const pageNums = Object.keys(remotePageRecords)
+        .map(x => Number(x))
+        .filter(x => Number.isFinite(x))
+        .sort((a, b) => a - b);
+      const merged = [];
+      for (const pn of pageNums) {
+        const arr = Array.isArray(remotePageRecords[pn]) ? remotePageRecords[pn] : [];
+        for (const rec of arr) merged.push(rec);
+      }
+      lastResults = [{
+        query: remoteKeyword,
+        query_type: remoteKeyword.includes(".") ? "domain" : "subject",
+        ok: true,
+        count: merged.length,
+        record_columns: [],
+        records: merged
+      }];
+      csvBtn.disabled = merged.length === 0;
     }
 
     async function loadRemotePage(pageNum) {
@@ -418,7 +440,10 @@ sf-express.com</textarea>
         remotePage = Number(data.pageNum || pageNum || 1);
         remotePages = Math.max(1, Number(data.pages || 1));
         remoteTotal = Math.max(0, Number(data.total || 0));
-        const rows = mapRemote(data.records || [], remotePage, Number(data.pageSize || remotePageSize || 10));
+        const currentRecords = Array.isArray(data.records) ? data.records : [];
+        remotePageRecords[remotePage] = currentRecords;
+        refreshRemoteExportRows();
+        const rows = mapRemote(currentRecords, remotePage, Number(data.pageSize || remotePageSize || 10));
         renderRows(rows);
         setStatus("Loaded page " + remotePage + "/" + remotePages + ", total " + remoteTotal, false);
       } catch (e) {
@@ -453,6 +478,7 @@ sf-express.com</textarea>
       remotePages = 1;
       remoteTotal = 0;
       remotePageSize = localPageSize;
+      remotePageRecords = {};
 
       const commonPayload = {
         service_type: Number(document.getElementById("serviceType").value),
@@ -476,7 +502,10 @@ sf-express.com</textarea>
           remotePages = Math.max(1, Number(data.pages || 1));
           remoteTotal = Math.max(0, Number(data.total || 0));
           remotePageSize = Math.max(1, Number(data.pageSize || localPageSize));
-          renderRows(mapRemote(data.records || [], remotePage, remotePageSize));
+          const firstRecords = Array.isArray(data.records) ? data.records : [];
+          remotePageRecords[remotePage] = firstRecords;
+          refreshRemoteExportRows();
+          renderRows(mapRemote(firstRecords, remotePage, remotePageSize));
           renderRemotePager();
           setStatus("Loaded page " + remotePage + "/" + remotePages + ", total " + remoteTotal + " (lazy paging)", false);
         } else {
