@@ -409,16 +409,22 @@ sf-express.com</textarea>
         .filter(x => Number.isFinite(x))
         .sort((a, b) => a - b);
       const merged = [];
+      const colSet = new Set();
       for (const pn of pageNums) {
         const arr = Array.isArray(remotePageRecords[pn]) ? remotePageRecords[pn] : [];
-        for (const rec of arr) merged.push(rec);
+        for (const rec of arr) {
+          merged.push(rec);
+          if (rec && typeof rec === "object") {
+            Object.keys(rec).forEach(k => colSet.add(k));
+          }
+        }
       }
       lastResults = [{
         query: remoteKeyword,
         query_type: remoteKeyword.includes(".") ? "domain" : "subject",
         ok: true,
         count: merged.length,
-        record_columns: [],
+        record_columns: Array.from(colSet),
         records: merged
       }];
       csvBtn.disabled = merged.length === 0;
