@@ -443,6 +443,7 @@ sf-express.com</textarea>
         const currentRecords = Array.isArray(data.records) ? data.records : [];
         remotePageRecords[remotePage] = currentRecords;
         refreshRemoteExportRows();
+        csvBtn.disabled = false;
         const rows = mapRemote(currentRecords, remotePage, Number(data.pageSize || remotePageSize || 10));
         renderRows(rows);
         setStatus("Loaded page " + remotePage + "/" + remotePages + ", total " + remoteTotal, false);
@@ -505,6 +506,7 @@ sf-express.com</textarea>
           const firstRecords = Array.isArray(data.records) ? data.records : [];
           remotePageRecords[remotePage] = firstRecords;
           refreshRemoteExportRows();
+          csvBtn.disabled = false;
           renderRows(mapRemote(firstRecords, remotePage, remotePageSize));
           renderRemotePager();
           setStatus("Loaded page " + remotePage + "/" + remotePages + ", total " + remoteTotal + " (lazy paging)", false);
